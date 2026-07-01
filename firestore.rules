@@ -1,0 +1,21 @@
+// ─── FIRESTORE SECURITY RULES ──────────────────────────────
+// Paste this into: Firebase Console → Build → Firestore Database
+// → Rules tab → replace everything → Publish.
+//
+// This ensures each signed-in user can ONLY read/write their own
+// tasks and FCM tokens — nobody else's data is visible to them,
+// even though they're all in the same Firestore project.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      match /tasks/{taskId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /fcmTokens/{tokenId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
