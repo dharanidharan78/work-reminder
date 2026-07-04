@@ -28,12 +28,55 @@ function loadLS(key, fallback) {
 function saveLS(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
+// ─── REPEAT / SCHEDULE HELPERS ─────────────────────────────
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function getTodayStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+// A task is "done" for today's purposes: for repeating tasks this
+// looks at whether today's date is in completedDates; for one-time
+// tasks it's just the plain done flag (kept for backward compat).
+function isDoneToday(t) {
+  if (!t) return false;
+  if (t.repeat === "daily" || t.repeat === "weekly") {
+    return (t.completedDates || []).includes(getTodayStr());
+  }
+  return !!t.done;
+}
+
+// Whether a repeating task is scheduled to appear today at all.
+// One-time and daily tasks are always relevant; weekly tasks only
+// on their chosen weekdays.
+function isRelevantToday(t) {
+  if (!t) return false;
+  if (t.repeat === "weekly") {
+    const day = new Date().getDay(); // 0=Sun..6=Sat
+    return (t.repeatDays || []).includes(day);
+  }
+  return true;
+}
+
+function repeatLabel(t) {
+  if (!t) return "";
+  if (t.repeat === "daily") return "🔁 Daily";
+  if (t.repeat === "weekly" && (t.repeatDays || []).length > 0) {
+    return "🔁 " + t.repeatDays.slice().sort((a, b) => a - b).map(i => WEEKDAYS[i]).join(",");
+  }
+  return "";
+}
+
 function isOverdue(t) {
-  if (!t || !t.dueTime || t.done) return false;
+  if (!t || !t.dueTime || isDoneToday(t)) return false;
   const parts = t.dueTime.split(":");
   if (parts.length < 2) return false;
   const due = new Date();
-  if (t.dueDate) {
+  if (t.repeat === "none" && t.dueDate) {
     const [y, m, d] = t.dueDate.split("-");
     due.setFullYear(parseInt(y,10), parseInt(m,10)-1, parseInt(d,10));
   }
@@ -119,11 +162,14 @@ class ErrorBoundary extends Component {
 
 const TaskItem = ({ t, onToggle, onDelete }) => {
   const over = isOverdue(t);
+  const doneToday = isDoneToday(t);
+  const rLabel = repeatLabel(t);
+  const relevant = isRelevantToday(t);
   return (
-    <div className={"task-item" + (t.done ? " done" : "")}>
-      <div className={"check-box" + (t.done ? " checked" : "")}
+    <div className={"task-item" + (doneToday ? " done" : "") + (!relevant ? " not-today" : "")}>
+      <div className={"check-box" + (doneToday ? " checked" : "")}
         onClick={() => onToggle(t.id)}>
-        {t.done && <Icon d={ICONS.check} size={12} />}
+        {doneToday && <Icon d={ICONS.check} size={12} />}
       </div>
       <div className="task-body">
         <div className="task-title">{t.title}</div>
@@ -131,7 +177,8 @@ const TaskItem = ({ t, onToggle, onDelete }) => {
           <span className={"badge badge-" + t.priority}>
             {t.priority === "high" ? "HIGH" : t.priority === "medium" ? "MED" : "LOW"}
           </span>
-          {t.dueDate && (
+          {rLabel && <span className="repeat-badge">{rLabel}</span>}
+          {t.dueDate && t.repeat === "none" && (
             <span className="date-badge">
               📅 {t.dueDate}
             </span>
@@ -141,7 +188,8 @@ const TaskItem = ({ t, onToggle, onDelete }) => {
               ⏰ {t.dueTime}
             </span>
           )}
-          {over && !t.done && <span className="badge badge-overdue">OVERDUE</span>}
+          {over && !doneToday && <span className="badge badge-overdue">OVERDUE</span>}
+          {!relevant && <span className="badge badge-not-today">NOT TODAY</span>}
         </div>
       </div>
       <button className="del-btn" onClick={() => onDelete(t.id)}>
@@ -164,7 +212,7 @@ const TaskList = ({ filtered, onToggle, onDelete }) => (
 
 const FilterTabs = ({ tab, setTab }) => (
   <div className="filter-tabs">
-    {[["all","All"],["pending","Pending"],["done","Done"],["high","🔴 High"]].map(([key, label]) => (
+    {[["all","All"],["today","📅 Today"],["pending","Pending"],["done","Done"],["high","🔴 High"]].map(([key, label]) => (
       <button key={key}
         className={"ftab" + (tab === key ? " active" : "")}
         onClick={() => setTab(key)}>
@@ -176,6 +224,7 @@ const FilterTabs = ({ tab, setTab }) => (
 
 const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
                    dueDate, setDueDate, dueTime, setDueTime,
+                   repeat, setRepeat, repeatDays, setRepeatDays,
                    onAdd, pct, done, total, inputRef }) => (
   <div className="add-form">
     <input
@@ -194,12 +243,36 @@ const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
         <option value="medium">🟡 Medium</option>
         <option value="low">🟢 Low</option>
       </select>
-      <input type="date" className="input-dark sel date-inp" value={dueDate}
-        onChange={e => setDueDate(e.target.value)} />
+      <select className="input-dark sel" value={repeat}
+        onChange={e => setRepeat(e.target.value)}>
+        <option value="none">One-time</option>
+        <option value="daily">Every day</option>
+        <option value="weekly">Custom days</option>
+      </select>
+      {repeat === "none" && (
+        <input type="date" className="input-dark sel date-inp" value={dueDate}
+          onChange={e => setDueDate(e.target.value)} />
+      )}
       <input type="time" className="input-dark sel" value={dueTime}
         onChange={e => setDueTime(e.target.value)} />
       <button className="btn-red" onClick={onAdd}>Add</button>
     </div>
+    {repeat === "weekly" && (
+      <div className="weekday-picker">
+        {WEEKDAYS.map((d, i) => (
+          <button
+            key={i}
+            type="button"
+            className={"weekday-chip" + (repeatDays.includes(i) ? " active" : "")}
+            onClick={() => setRepeatDays(prev =>
+              prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i].sort((a,b) => a-b)
+            )}
+          >
+            {d}
+          </button>
+        ))}
+      </div>
+    )}
     <div className="progress-row" style={{ marginTop:"10px" }}>
       <div className="progress-bar">
         <div className="progress-fill" style={{ width: pct + "%" }} />
@@ -326,7 +399,9 @@ const StatsPanel = ({ total, done, pending, highCount, pct }) => (
 );
 
 const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
-                    dueDate, setDueDate, dueTime, setDueTime, onAdd, pct, done, total }) => {
+                    dueDate, setDueDate, dueTime, setDueTime,
+                    repeat, setRepeat, repeatDays, setRepeatDays,
+                    onAdd, pct, done, total }) => {
   const ref = useRef(null);
   useEffect(() => {
     const t = setTimeout(() => { if (ref.current) ref.current.focus(); }, 80);
@@ -349,6 +424,8 @@ const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
           priority={priority}   setPriority={setPriority}
           dueDate={dueDate}     setDueDate={setDueDate}
           dueTime={dueTime}     setDueTime={setDueTime}
+          repeat={repeat}       setRepeat={setRepeat}
+          repeatDays={repeatDays} setRepeatDays={setRepeatDays}
           onAdd={onAdd} pct={pct} done={done} total={total}
         />
       </div>
@@ -391,6 +468,8 @@ function AppInner({ user }) {
   const [priority, setPriority]     = useState("medium");
   const [dueDate, setDueDate]       = useState("");
   const [dueTime, setDueTime]       = useState("");
+  const [repeat, setRepeat]         = useState("none");
+  const [repeatDays, setRepeatDays] = useState([]);
   const [showAdd, setShowAdd]       = useState(false);
   const [clock, setClock]           = useState("");
   const [toast, setToast]           = useState({ visible:false, msg:"" });
@@ -525,11 +604,12 @@ function AppInner({ user }) {
     const check = () => {
       const now = new Date();
       tasks.forEach(t => {
-        if (!t.dueTime || t.done || notified.has(t.id)) return;
+        if (!t.dueTime || isDoneToday(t) || notified.has(t.id)) return;
+        if (t.repeat === "weekly" && !isRelevantToday(t)) return;
         const parts = t.dueTime.split(":");
         if (parts.length < 2) return;
         const due = new Date();
-        if (t.dueDate) {
+        if (t.repeat === "none" && t.dueDate) {
           const [y, m, d] = t.dueDate.split("-");
           due.setFullYear(parseInt(y,10), parseInt(m,10)-1, parseInt(d,10));
         }
@@ -567,9 +647,18 @@ function AppInner({ user }) {
   async function addTask() {
     const title = taskInput.trim();
     if (!title || !user) return;
+    if (repeat === "weekly" && repeatDays.length === 0) {
+      showToast("⚠️ Pick at least one day for custom repeat");
+      return;
+    }
     const id = String(Date.now());
     const task = {
-      title, priority, dueDate, dueTime,
+      title, priority,
+      dueDate: repeat === "none" ? dueDate : "",
+      dueTime,
+      repeat,
+      repeatDays: repeat === "weekly" ? repeatDays : [],
+      completedDates: [],
       done: false, createdAt: Date.now(),
     };
     try {
@@ -581,6 +670,8 @@ function AppInner({ user }) {
     setTaskInput("");
     setDueDate("");
     setDueTime("");
+    setRepeat("none");
+    setRepeatDays([]);
     setShowAdd(false);
   }
 
@@ -589,7 +680,14 @@ function AppInner({ user }) {
     const t = tasks.find(t => t.id === id);
     if (!t) return;
     try {
-      await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, done: !t.done });
+      if (t.repeat === "daily" || t.repeat === "weekly") {
+        const today = getTodayStr();
+        const cur = t.completedDates || [];
+        const next = cur.includes(today) ? cur.filter(d => d !== today) : [...cur, today];
+        await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, completedDates: next });
+      } else {
+        await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, done: !t.done });
+      }
       flashSaved();
     } catch (e) {
       showToast("⚠️ Couldn't update — check connection");
@@ -607,19 +705,20 @@ function AppInner({ user }) {
   }, [user, flashSaved]);
 
   const filtered = tasks.filter(t => {
-    if (tab === "pending") return !t.done;
-    if (tab === "done")    return t.done;
+    if (tab === "today")   return isRelevantToday(t);
+    if (tab === "pending") return !isDoneToday(t);
+    if (tab === "done")    return isDoneToday(t);
     if (tab === "high")    return t.priority === "high";
     return true;
   });
 
   const total     = tasks.length;
-  const done      = tasks.filter(t => t.done).length;
+  const done      = tasks.filter(t => isDoneToday(t)).length;
   const pending   = total - done;
-  const highCount = tasks.filter(t => t.priority === "high" && !t.done).length;
+  const highCount = tasks.filter(t => t.priority === "high" && !isDoneToday(t)).length;
   const pct       = total > 0 ? Math.round((done / total) * 100) : 0;
   const upcoming  = tasks
-    .filter(t => t.dueTime && !t.done)
+    .filter(t => t.dueTime && !isDoneToday(t))
     .sort((a, b) => {
       const aStr = (a.dueDate || "9999-12-31") + "T" + a.dueTime;
       const bStr = (b.dueDate || "9999-12-31") + "T" + b.dueTime;
@@ -642,9 +741,10 @@ function AppInner({ user }) {
     const ctx = tasks.length === 0
       ? "No tasks yet."
       : tasks.map(t =>
-          "- [" + (t.done ? "DONE" : t.priority.toUpperCase()) + '] "' + t.title + '"' +
-          (t.dueDate ? " on " + t.dueDate : "") +
-          (t.dueTime ? " @ " + t.dueTime : "")
+          "- [" + (isDoneToday(t) ? "DONE" : t.priority.toUpperCase()) + '] "' + t.title + '"' +
+          (t.dueDate && t.repeat === "none" ? " on " + t.dueDate : "") +
+          (t.dueTime ? " @ " + t.dueTime : "") +
+          (repeatLabel(t) ? " (" + repeatLabel(t) + ")" : "")
         ).join("\n");
 
     const now = new Date();
@@ -716,6 +816,8 @@ function AppInner({ user }) {
     priority,  setPriority,
     dueDate,   setDueDate,
     dueTime,   setDueTime,
+    repeat,    setRepeat,
+    repeatDays, setRepeatDays,
     onAdd: addTask,
     pct, done, total,
   };

@@ -82,6 +82,32 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
 .add-form-row2 .sel{flex:1;min-width:100px;}
 .add-form-row2 .btn-red{flex-shrink:0;}
 
+/* ── Weekday Picker (custom repeat days) ── */
+.weekday-picker{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 4px;}
+.weekday-chip{
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);
+  border-radius:8px;color:#666;font-family:'JetBrains Mono',monospace;
+  font-size:11px;font-weight:700;padding:7px 10px;cursor:pointer;
+  transition:all .15s;
+}
+.weekday-chip:hover{border-color:rgba(255,255,255,.2);color:#aaa;}
+.weekday-chip.active{
+  background:rgba(239,35,60,.12);color:#ef233c;
+  border-color:rgba(239,35,60,.35);
+}
+
+/* ── Recurring task badges ── */
+.repeat-badge{
+  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  color:#4a9eff;background:rgba(74,158,255,.1);
+  border:1px solid rgba(74,158,255,.25);border-radius:6px;padding:2px 6px;
+}
+.badge-not-today{
+  background:rgba(255,255,255,.04);color:#555;
+  border:1px solid rgba(255,255,255,.1);font-size:8px;
+}
+.task-item.not-today{opacity:.55;}
+
 /* ── Mobile Add Modal ── */
 .add-modal-overlay{
   position:fixed;inset:0;z-index:200;
