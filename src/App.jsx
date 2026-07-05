@@ -10,6 +10,7 @@ import {
   onSnapshot,
   query,
   orderBy,
+  writeBatch,
 } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import Login from "./Login";
@@ -33,6 +34,16 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function getTodayStr() {
   const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+// Returns YYYY-MM-DD for "today + n days"
+function addDaysStr(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -282,7 +293,8 @@ const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
   </div>
 );
 
-const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef }) => (
+const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
+                   onImportFile, importing, fileInputRef }) => (
   <div className="card-red">
     <div className="panel-label red">
       <div className="panel-dot" />AI Intel
@@ -293,7 +305,7 @@ const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef })
           <SafeMessage text={m.text} />
         </div>
       ))}
-      {aiLoading && (
+      {(aiLoading || importing) && (
         <div className="ai-bubble">
           <span className="dot1" /><span className="dot2" /><span className="dot3" />
         </div>
@@ -319,6 +331,25 @@ const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef })
         </button>
       ))}
     </div>
+    <input
+      type="file"
+      ref={fileInputRef}
+      accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+      style={{ display: "none" }}
+      onChange={e => {
+        const file = e.target.files && e.target.files[0];
+        if (file) onImportFile(file);
+        e.target.value = "";
+      }}
+    />
+    <button
+      className="qp-btn import-btn"
+      style={{ width: "100%", marginTop: "8px" }}
+      disabled={importing}
+      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+    >
+      {importing ? "📁 Reading file & adding tasks…" : "📁 Upload plan (txt/pdf/excel/word) → auto-add tasks"}
+    </button>
   </div>
 );
 
@@ -479,6 +510,7 @@ function AppInner({ user }) {
   }]);
   const [aiInput, setAiInput]       = useState("");
   const [aiLoading, setAiLoading]   = useState(false);
+  const [importing, setImporting]   = useState(false);
   const [saveFlash, setSaveFlash]   = useState(false);
   const [notifStatus, setNotifStatus] = useState(
     "Notification" in window ? Notification.permission : "denied"
@@ -496,6 +528,7 @@ function AppInner({ user }) {
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
   const desktopInpRef  = useRef(null);
+  const fileInputRef   = useRef(null);
 
   // Clock
   useEffect(() => {
@@ -811,6 +844,171 @@ function AppInner({ user }) {
     setAiLoading(false);
   }
 
+  // Reads any supported file type and returns its content as plain text,
+  // so it can be handed to the AI regardless of format.
+  async function extractTextFromFile(file) {
+    const name = file.name.toLowerCase();
+
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      const XLSX = await import("xlsx");
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      let out = "";
+      wb.SheetNames.forEach(sheetName => {
+        out += "Sheet: " + sheetName + "\n";
+        out += XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]) + "\n\n";
+      });
+      return out;
+    }
+
+    if (name.endsWith(".pdf")) {
+      const pdfjsLib = await import("pdfjs-dist/build/pdf");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = process.env.PUBLIC_URL + "/pdf.worker.min.js";
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let out = "";
+      const maxPages = Math.min(pdf.numPages, 30); // cap to keep this fast on low-RAM devices
+      for (let i = 1; i <= maxPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        out += content.items.map(it => it.str).join(" ") + "\n";
+      }
+      return out;
+    }
+
+    if (name.endsWith(".docx")) {
+      const mammoth = await import("mammoth/mammoth.browser");
+      const buf = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      return result.value || "";
+    }
+
+    if (name.endsWith(".doc")) {
+      throw new Error("Old .doc format isn't supported — please save it as .docx or .pdf and try again");
+    }
+
+    // Plain text formats: .txt, .md, .csv, .json
+    return await file.text();
+  }
+
+  // Upload a plan/schedule file — txt, md, csv, json, Excel, PDF, or Word —
+  // and let the AI pull out every task in it, then auto-create them on the
+  // right days. Tasks with no date mentioned get spread one-per-day starting today.
+  async function importTasksFromFile(file) {
+    if (!user || importing) return;
+    setImporting(true);
+    try {
+      const rawText = await extractTextFromFile(file);
+      const trimmed = (rawText || "").slice(0, 8000); // keep the prompt small for the 8B model
+      if (!trimmed.trim()) {
+        showToast("⚠️ Couldn't find any readable text in that file");
+        setImporting(false);
+        return;
+      }
+
+      const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
+      if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+        showToast("⚠️ Groq API key not set — can't read the file");
+        setImporting(false);
+        return;
+      }
+
+      const todayStr = getTodayStr();
+      const sysPrompt =
+        "You extract a task list from an uploaded plan/schedule file and output ONLY a raw JSON array — no markdown, no code fences, no explanation.\n" +
+        "Today's date is " + todayStr + ".\n" +
+        "Each array item must be an object with exactly these fields:\n" +
+        '  "title": short task name (string, required)\n' +
+        '  "date": the specific date for the task in YYYY-MM-DD format. If the file names a weekday (e.g. "Monday") without a date, use the NEXT occurrence of that weekday from today. If NO date or day is mentioned for a task at all, set "date" to an empty string "".\n' +
+        '  "time": 24-hour "HH:MM" if a time is mentioned, else ""\n' +
+        '  "priority": "high", "medium", or "low" — infer from urgency wording, default "medium"\n' +
+        "Extract every distinct task/to-do you can find. Ignore headers, greetings, or non-task lines.";
+
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + GROQ_KEY,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 2000,
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user",   content: trimmed },
+          ],
+        }),
+      });
+
+      const d = await r.json();
+      if (d.error) {
+        showToast("⚠️ Groq error: " + d.error.message);
+        setImporting(false);
+        return;
+      }
+
+      let raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+      raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+
+      let items;
+      try {
+        items = JSON.parse(raw);
+      } catch (e) {
+        showToast("⚠️ Couldn't understand that file's format");
+        setImporting(false);
+        return;
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        showToast("⚠️ No tasks found in that file");
+        setImporting(false);
+        return;
+      }
+
+      // Undated tasks get spread one-per-day starting today, in file order
+      let spreadOffset = 0;
+      const batch = writeBatch(db);
+      let count = 0;
+      items.forEach((item, i) => {
+        const title = (item && item.title ? String(item.title) : "").trim();
+        if (!title) return;
+        let dueDate = item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : "";
+        if (!dueDate) {
+          dueDate = addDaysStr(spreadOffset);
+          spreadOffset += 1;
+        }
+        const priority = ["high", "medium", "low"].includes(item.priority) ? item.priority : "medium";
+        const dueTime = /^\d{2}:\d{2}$/.test(item.time || "") ? item.time : "";
+        const id = String(Date.now()) + "-" + i;
+        const task = {
+          title, priority, dueDate, dueTime,
+          repeat: "none", repeatDays: [],
+          completedDates: [], done: false,
+          createdAt: Date.now(),
+        };
+        batch.set(doc(db, "users", user.uid, "tasks", id), task);
+        count += 1;
+      });
+
+      if (count === 0) {
+        showToast("⚠️ No tasks found in that file");
+        setImporting(false);
+        return;
+      }
+
+      await batch.commit();
+      flashSaved();
+      showToast("✅ Added " + count + " task" + (count === 1 ? "" : "s") + " from " + file.name);
+      setAiMessages(prev => [...prev, {
+        role: "ai",
+        text: "📁 Imported " + count + " task" + (count === 1 ? "" : "s") + " from \"" + file.name + "\" and added them to your list, spread across the right days.",
+      }]);
+    } catch (err) {
+      showToast("⚠️ Couldn't read that file: " + err.message);
+    }
+    setImporting(false);
+  }
+
   const formProps = {
     taskInput, setTaskInput,
     priority,  setPriority,
@@ -871,6 +1069,7 @@ function AppInner({ user }) {
               aiMessages={aiMessages} aiLoading={aiLoading}
               aiInput={aiInput} setAiInput={setAiInput}
               onAsk={askAI} chatRef={chatRef}
+              onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
             />
             <RemindersPanel
               upcoming={upcoming}
@@ -895,6 +1094,7 @@ function AppInner({ user }) {
               aiMessages={aiMessages} aiLoading={aiLoading}
               aiInput={aiInput} setAiInput={setAiInput}
               onAsk={askAI} chatRef={chatRef}
+              onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
             />
           )}
           {screen === "reminders" && (

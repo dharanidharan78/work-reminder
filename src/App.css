@@ -259,6 +259,10 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
   font-family:'JetBrains Mono',monospace;min-height:30px;}
 .qp-btn:hover{color:#888;border-color:rgba(255,255,255,.12);}
 .qp-btn:active{color:#ef233c;border-color:rgba(239,35,60,.3);}
+.import-btn{background:rgba(239,35,60,.06);border-color:rgba(239,35,60,.2);
+  color:#ef233c;font-size:10px;padding:9px 10px;min-height:36px;}
+.import-btn:hover{background:rgba(239,35,60,.1);border-color:rgba(239,35,60,.35);}
+.import-btn:disabled{opacity:.6;cursor:wait;}
 
 /* ── Reminders ── */
 .reminder-list{display:flex;flex-direction:column;gap:6px;}
