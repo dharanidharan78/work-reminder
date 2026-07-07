@@ -50,6 +50,18 @@ function addDaysStr(n) {
   return y + "-" + m + "-" + day;
 }
 
+// Returns YYYY-MM-DD for "given base date (YYYY-MM-DD) + n days" —
+// used by the Roadmap feature to lay out day 1..N from a chosen start date.
+function addDaysFromDate(dateStr, n) {
+  const parts = (dateStr || getTodayStr()).split("-");
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
 // A task is "done" for today's purposes: for repeating tasks this
 // looks at whether today's date is in completedDates; for one-time
 // tasks it's just the plain done flag (kept for backward compat).
@@ -117,6 +129,7 @@ const ICONS = {
   ai:    "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z",
   bell:  "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
   stats: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+  roadmap: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
   add:   "M12 4v16m8-8H4",
   check: "M5 13l4 4L19 7",
   close: "M6 18L18 6M6 6l12 12",
@@ -429,6 +442,176 @@ const StatsPanel = ({ total, done, pending, highCount, pct }) => (
   </div>
 );
 
+// ─── ROADMAP PANEL ─────────────────────────────────────────
+// Separate "session" from Tasks: upload any roadmap file (e.g. a
+// 100-day full stack roadmap) and it gets split into one small,
+// dated mini-task per day, starting from a chosen start date.
+const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileInputRef,
+                        rmName, setRmName, rmStartDate, setRmStartDate,
+                        rmTotalDays, setRmTotalDays, rmPageSize, setRmPageSize,
+                        generatingIds,
+                        onImportFile, onToggleDay, onDelete, onUnlockNextPage }) => {
+  const [expandedId, setExpandedId] = useState(null);
+  const totalDaysNum = parseInt(rmTotalDays, 10) || 0;
+  const isOdd = totalDaysNum > 0 && totalDaysNum % 2 !== 0;
+  const suggestedPageSize = totalDaysNum > 0 ? Math.ceil(totalDaysNum / 2) : "";
+
+  return (
+    <div className="card-dark">
+      <div className="panel-label gray">
+        🗺️ Roadmap
+        <span className="panel-hint">day-by-day plan, unlocked page by page</span>
+      </div>
+
+      <div className="rm-form">
+        <input
+          className="input-dark"
+          placeholder="Roadmap name (optional)"
+          value={rmName}
+          onChange={e => setRmName(e.target.value)}
+        />
+        <div className="rm-form-row">
+          <input
+            type="date"
+            className="input-dark sel"
+            value={rmStartDate}
+            onChange={e => setRmStartDate(e.target.value)}
+          />
+          <input
+            type="number"
+            className="input-dark sel"
+            min="1" max="180"
+            value={rmTotalDays}
+            placeholder="Days"
+            onChange={e => setRmTotalDays(e.target.value)}
+          />
+        </div>
+        {isOdd && (
+          <div className="rm-odd-note">
+            <div className="rm-odd-label">
+              ⚠️ {totalDaysNum} is odd — it can't split evenly into 2 pages. Choose your own days-per-page:
+            </div>
+            <input
+              type="number"
+              className="input-dark sel"
+              min="1" max={totalDaysNum}
+              value={rmPageSize}
+              placeholder={"Days per page (e.g. " + suggestedPageSize + ")"}
+              onChange={e => setRmPageSize(e.target.value)}
+            />
+          </div>
+        )}
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+          style={{ display: "none" }}
+          onChange={e => {
+            const file = e.target.files && e.target.files[0];
+            if (file) onImportFile(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          className="qp-btn import-btn"
+          style={{ width: "100%", marginTop: "8px" }}
+          disabled={importing}
+          onClick={() => fileInputRef.current && fileInputRef.current.click()}
+        >
+          {importing
+            ? "🗺️ " + (rmProgress || "Building page 1…")
+            : "📁 Upload roadmap file → split into pages of daily tasks"}
+        </button>
+      </div>
+
+      {roadmapsLoading ? (
+        <div className="empty-small">Loading…</div>
+      ) : roadmaps.length === 0 ? (
+        <div className="empty-small">No roadmaps yet — upload a plan file above</div>
+      ) : (
+        <div className="roadmap-list">
+          {roadmaps.map(r => {
+            const days = r.days || [];
+            const total = days.length;
+            const doneCount = days.filter(d => d.done).length;
+            const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+            const isOpen = expandedId === r.id;
+            const isGenerating = generatingIds && generatingIds.has(r.id);
+            const currentPage = r.currentPage || 1;
+            const totalPages = r.totalPages || 1;
+            const hasMorePages = currentPage < totalPages;
+            return (
+              <div key={r.id} className="roadmap-item">
+                <div className="roadmap-item-head" onClick={() => setExpandedId(isOpen ? null : r.id)}>
+                  <div className="roadmap-item-title">{r.name || "Roadmap"}</div>
+                  <button
+                    className="del-btn"
+                    onClick={e => { e.stopPropagation(); onDelete(r.id); }}
+                  >
+                    <Icon d={ICONS.close} size={14} />
+                  </button>
+                </div>
+                <div className="roadmap-item-sub">
+                  Starts {r.startDate} · {total} days · Page {currentPage}/{totalPages} ({r.pageSize || total}/page)
+                </div>
+                <div className="progress-row">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: pct + "%" }} />
+                  </div>
+                  <span className="progress-text">{doneCount}/{total}</span>
+                </div>
+                {isGenerating && (
+                  <div className="roadmap-generating">🔄 Unlocking page {currentPage + 1} of {totalPages}…</div>
+                )}
+                {isOpen && (
+                  <>
+                    <div className="roadmap-days">
+                      {days.map((d, i) => {
+                        const locked = !d.generated;
+                        return (
+                          <div key={i} className={"roadmap-day-row" + (d.done ? " done" : "") + (locked ? " locked" : "")}>
+                            {locked ? (
+                              <div className="check-box locked-box">🔒</div>
+                            ) : (
+                              <div
+                                className={"check-box" + (d.done ? " checked" : "")}
+                                onClick={() => onToggleDay(r.id, i)}
+                              >
+                                {d.done && <Icon d={ICONS.check} size={12} />}
+                              </div>
+                            )}
+                            <div className="roadmap-day-body">
+                              <div className="roadmap-day-meta">
+                                <span className="roadmap-day-num">Day {d.day}</span>
+                                <span className="date-badge">📅 {d.date}</span>
+                              </div>
+                              <div className="roadmap-day-task">
+                                {locked ? "Unlocks after the current page is completed" : d.task}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {hasMorePages && !isGenerating && (
+                      <button
+                        className="qp-btn rm-unlock-btn"
+                        onClick={() => onUnlockNextPage(r.id)}
+                      >
+                        🔓 Unlock page {currentPage + 1} of {totalPages} now
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
                     dueDate, setDueDate, dueTime, setDueTime,
                     repeat, setRepeat, repeatDays, setRepeatDays,
@@ -467,6 +650,7 @@ const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
 const NAV_ITEMS = [
   { id:"tasks",     label:"Tasks"  },
   { id:"ai",        label:"AI"     },
+  { id:"roadmap",   label:"Road"   },
   { id:"reminders", label:"Remind" },
   { id:"stats",     label:"Stats"  },
 ];
@@ -525,10 +709,23 @@ function AppInner({ user }) {
     return new Set(loadLS(NOTIFIED_KEY, []));
   });
 
+  // ── Roadmap: separate "session" — upload a plan file, split into
+  // one dated mini-task per day starting from a chosen start date.
+  const [roadmaps, setRoadmaps]         = useState([]);
+  const [roadmapsLoading, setRoadmapsLoading] = useState(true);
+  const [rmName, setRmName]             = useState("");
+  const [rmStartDate, setRmStartDate]   = useState(getTodayStr());
+  const [rmTotalDays, setRmTotalDays]   = useState(100);
+  const [rmPageSize, setRmPageSize]     = useState("");
+  const [rmImporting, setRmImporting]   = useState(false);
+  const [rmProgress, setRmProgress]     = useState("");
+  const [rmGeneratingIds, setRmGeneratingIds] = useState(() => new Set());
+
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
   const desktopInpRef  = useRef(null);
   const fileInputRef   = useRef(null);
+  const rmFileInputRef = useRef(null);
 
   // Clock
   useEffect(() => {
@@ -556,6 +753,26 @@ function AppInner({ user }) {
       (err) => {
         console.error("Firestore sync error:", err);
         setTasksLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [user]);
+
+  // Roadmap sync — same real-time pattern as tasks, separate collection
+  // so roadmap plans stay out of the regular task list.
+  useEffect(() => {
+    if (!user) return;
+    const rmRef = collection(db, "users", user.uid, "roadmaps");
+    const q = query(rmRef, orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setRoadmaps(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setRoadmapsLoading(false);
+      },
+      (err) => {
+        console.error("Roadmap sync error:", err);
+        setRoadmapsLoading(false);
       }
     );
     return () => unsub();
@@ -1009,6 +1226,311 @@ function AppInner({ user }) {
     setImporting(false);
   }
 
+  // Parses Groq's rate-limit reset headers, e.g. "7.66s" or "500ms", into milliseconds.
+  function parseGroqResetMs(value) {
+    if (!value) return 0;
+    const v = String(value).trim();
+    if (v.endsWith("ms")) return parseFloat(v) || 0;
+    if (v.endsWith("s")) return (parseFloat(v) || 0) * 1000;
+    return (parseFloat(v) || 0) * 1000;
+  }
+
+  // Core reusable Groq call: turns a SLICE of a roadmap (rangeStart..rangeEnd,
+  // out of totalDaysForProportion overall) into { day: task } entries, using
+  // small 10-day sub-batches with rate-limit-aware pacing/retry so a single
+  // page (not the whole roadmap) never risks the "request too large" error.
+  async function groqGenerateDayRangeChunked(GROQ_KEY, sourceText, totalDaysForProportion, rangeStart, rangeEnd, onProgress) {
+    const BATCH_SIZE = 10;
+    const byDay = {};
+    let tokensRemaining = null;
+    let nextWaitMs = 0;
+    const MAX_RETRIES = 4;
+
+    for (let batchStart = rangeStart; batchStart <= rangeEnd; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, rangeEnd);
+      const batchDays = batchEnd - batchStart + 1;
+
+      const sliceStart = Math.max(0, Math.floor(((batchStart - 1) / totalDaysForProportion) * sourceText.length) - 150);
+      const sliceEnd = Math.min(sourceText.length, Math.floor((batchEnd / totalDaysForProportion) * sourceText.length) + 150);
+      let chunkText = sourceText.slice(sliceStart, sliceEnd).trim();
+      if (!chunkText) chunkText = sourceText.slice(0, 1200);
+      chunkText = chunkText.slice(0, 1800);
+
+      const sysPrompt =
+        "You convert part of a learning/project roadmap document into a strict day-by-day plan and output ONLY a raw JSON array — no markdown, no code fences, no explanation.\n" +
+        "This batch must have EXACTLY " + batchDays + " entries, for days " + batchStart + " to " + batchEnd + " of a " + totalDaysForProportion + "-day roadmap overall, in order.\n" +
+        "Each array item must be an object with exactly these fields:\n" +
+        '  "day": integer day number (' + batchStart + " to " + batchEnd + ")\n" +
+        '  "task": one short, specific, actionable mini-task for that day (max ~15 words)\n' +
+        "The text below is roughly the portion of the roadmap relevant to these days — use it, and if it runs out, continue with the natural next step in the topic.\n" +
+        "Never leave a day empty.";
+
+      const estMaxTokens = Math.min(700, 120 + batchDays * 30);
+      const estInputTokens = Math.ceil((chunkText.length + sysPrompt.length) / 4) + 50;
+      const estNeeded = estInputTokens + estMaxTokens;
+
+      if (tokensRemaining !== null && tokensRemaining < estNeeded) {
+        if (onProgress) onProgress("Waiting for Groq's per-minute limit to reset…");
+        await new Promise(res => setTimeout(res, nextWaitMs || 15000));
+      }
+
+      if (onProgress) onProgress("Building days " + batchStart + "–" + batchEnd + " of " + rangeEnd + "…");
+
+      let attempt = 0;
+      while (attempt <= MAX_RETRIES) {
+        let r;
+        try {
+          r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + GROQ_KEY,
+            },
+            body: JSON.stringify({
+              model: "llama-3.1-8b-instant",
+              max_tokens: estMaxTokens,
+              temperature: 0.3,
+              messages: [
+                { role: "system", content: sysPrompt },
+                { role: "user",   content: chunkText },
+              ],
+            }),
+          });
+        } catch (netErr) {
+          console.warn("Roadmap batch network error:", netErr.message);
+          break; // fall through — those days keep their fallback task
+        }
+
+        const remHeader   = r.headers.get("x-ratelimit-remaining-tokens");
+        const resetHeader = r.headers.get("x-ratelimit-reset-tokens");
+        nextWaitMs = parseGroqResetMs(resetHeader) + 800;
+        tokensRemaining = remHeader !== null ? parseInt(remHeader, 10) : null;
+
+        if (r.status === 429) {
+          const retryAfterHeader = r.headers.get("retry-after");
+          const retryMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : nextWaitMs;
+          attempt += 1;
+          if (attempt > MAX_RETRIES) {
+            return { byDay, error: "Groq rate limit hit repeatedly — try upgrading to Dev tier or a smaller page size" };
+          }
+          if (onProgress) onProgress("Groq rate limit — retrying in " + Math.ceil(retryMs / 1000) + "s…");
+          await new Promise(res => setTimeout(res, Math.max(retryMs, 1000)));
+          continue;
+        }
+
+        let d;
+        try { d = await r.json(); } catch (e) { d = {}; }
+
+        if (d.error) {
+          return { byDay, error: "Groq error: " + d.error.message };
+        }
+
+        let raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+        raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+
+        let items;
+        try { items = JSON.parse(raw); } catch (e) { items = []; }
+        if (Array.isArray(items)) {
+          items.forEach(it => {
+            const dayNum = parseInt(it && it.day, 10);
+            const task = (it && it.task ? String(it.task) : "").trim();
+            if (dayNum >= batchStart && dayNum <= batchEnd && task) byDay[dayNum] = task;
+          });
+        }
+        break; // success — move to next batch
+      }
+    }
+    return { byDay, error: null };
+  }
+
+  // Upload a roadmap/plan file — same supported formats as task import.
+  // To dodge Groq's token limits for good (instead of just working around
+  // them with retries), the roadmap is split into PAGES:
+  //   • even total days  → auto-split into 2 equal pages
+  //   • odd total days   → user picks their own days-per-page
+  // Only page 1 is generated up front (small, fast, well under any token
+  // limit). Later pages are generated lazily — automatically once the
+  // current page's days are all checked off, or manually via "Unlock next
+  // page" — so the AI is never asked to build the whole roadmap in one go.
+  async function importRoadmapFromFile(file) {
+    if (!user || rmImporting) return;
+    const totalDays = Math.max(1, Math.min(180, parseInt(rmTotalDays, 10) || 100));
+    const startDate = rmStartDate || getTodayStr();
+    const isOdd = totalDays % 2 !== 0;
+    const pageSize = isOdd
+      ? Math.max(1, Math.min(totalDays, parseInt(rmPageSize, 10) || Math.ceil(totalDays / 2)))
+      : totalDays / 2;
+    const totalPages = Math.max(1, Math.ceil(totalDays / pageSize));
+
+    setRmImporting(true);
+    setRmProgress("");
+    try {
+      const rawText = await extractTextFromFile(file);
+      const trimmed = (rawText || "").slice(0, 12000);
+      if (!trimmed.trim()) {
+        showToast("⚠️ Couldn't find any readable text in that file");
+        setRmImporting(false);
+        return;
+      }
+
+      const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
+      if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+        showToast("⚠️ Groq API key not set — can't read the file");
+        setRmImporting(false);
+        return;
+      }
+
+      const page1End = Math.min(pageSize, totalDays);
+      const { byDay, error } = await groqGenerateDayRangeChunked(
+        GROQ_KEY, trimmed, totalDays, 1, page1End, (msg) => setRmProgress(msg)
+      );
+      if (error) {
+        showToast("⚠️ " + error);
+        setRmImporting(false);
+        setRmProgress("");
+        return;
+      }
+
+      // Page 1 gets real tasks; the rest stay locked placeholders until unlocked.
+      let lastTask = "Review and practice what you've covered so far";
+      const days = [];
+      for (let day = 1; day <= totalDays; day++) {
+        if (day <= page1End) {
+          const task = byDay[day] || lastTask;
+          lastTask = byDay[day] || lastTask;
+          days.push({ day, date: addDaysFromDate(startDate, day - 1), task, done: false, generated: true });
+        } else {
+          days.push({ day, date: addDaysFromDate(startDate, day - 1), task: null, done: false, generated: false });
+        }
+      }
+
+      const id = String(Date.now());
+      const name = rmName.trim() || file.name.replace(/\.[^.]+$/, "");
+      const roadmapDoc = {
+        name, sourceFileName: file.name, startDate, totalDays,
+        pageSize, totalPages, currentPage: 1,
+        sourceText: trimmed, // kept so later pages can be generated without re-uploading
+        createdAt: Date.now(), days,
+      };
+      await setDoc(doc(db, "users", user.uid, "roadmaps", id), roadmapDoc);
+      flashSaved();
+      showToast("✅ Page 1 of " + totalPages + " ready (" + page1End + " days) — the rest unlock as you complete each page");
+      setRmName("");
+      setRmPageSize("");
+    } catch (err) {
+      showToast("⚠️ Couldn't read that file: " + err.message);
+    }
+    setRmProgress("");
+    setRmImporting(false);
+  }
+
+  // Generates one page's worth of day-tasks on demand (auto-triggered when
+  // the previous page is fully checked off, or manually via the "Unlock
+  // next page" button) and merges them into the roadmap doc.
+  const generateRoadmapPage = useCallback(async (roadmapId, pageIndex) => {
+    if (!user) return;
+    setRmGeneratingIds(prev => {
+      if (prev.has(roadmapId)) return prev;
+      const next = new Set(prev); next.add(roadmapId); return next;
+    });
+    try {
+      const r = roadmaps.find(x => x.id === roadmapId);
+      if (!r || pageIndex > (r.totalPages || 1) || pageIndex <= (r.currentPage || 1)) return;
+
+      const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
+      if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+        showToast("⚠️ Groq API key not set — can't unlock the next page");
+        return;
+      }
+
+      const pageSize = r.pageSize || r.totalDays;
+      const rangeStart = (pageIndex - 1) * pageSize + 1;
+      const rangeEnd = Math.min(pageIndex * pageSize, r.totalDays);
+      const { byDay, error } = await groqGenerateDayRangeChunked(
+        GROQ_KEY, r.sourceText || "", r.totalDays, rangeStart, rangeEnd, null
+      );
+      if (error) {
+        showToast("⚠️ " + error);
+        return;
+      }
+
+      let lastTask = "Review and practice what you've covered so far";
+      const prevDay = r.days[rangeStart - 2];
+      if (prevDay && prevDay.task) lastTask = prevDay.task;
+
+      const newDays = r.days.map((d, i) => {
+        const dayNum = i + 1;
+        if (dayNum >= rangeStart && dayNum <= rangeEnd) {
+          const task = byDay[dayNum] || lastTask;
+          lastTask = byDay[dayNum] || lastTask;
+          return { ...d, task, generated: true };
+        }
+        return d;
+      });
+
+      await setDoc(doc(db, "users", user.uid, "roadmaps", roadmapId), {
+        name: r.name, sourceFileName: r.sourceFileName, startDate: r.startDate,
+        totalDays: r.totalDays, pageSize: r.pageSize, totalPages: r.totalPages,
+        currentPage: pageIndex, sourceText: r.sourceText, createdAt: r.createdAt,
+        days: newDays,
+      });
+      flashSaved();
+      showToast("✅ Page " + pageIndex + " of " + r.totalPages + " unlocked!");
+    } catch (e) {
+      showToast("⚠️ Couldn't unlock next page — check connection");
+    } finally {
+      setRmGeneratingIds(prev => {
+        const next = new Set(prev); next.delete(roadmapId); return next;
+      });
+    }
+  }, [user, roadmaps, flashSaved]);
+
+  const unlockNextRoadmapPage = useCallback((roadmapId) => {
+    const r = roadmaps.find(x => x.id === roadmapId);
+    if (!r) return;
+    generateRoadmapPage(roadmapId, (r.currentPage || 1) + 1);
+  }, [roadmaps, generateRoadmapPage]);
+
+  const toggleRoadmapDay = useCallback(async (roadmapId, dayIdx) => {
+    if (!user) return;
+    const r = roadmaps.find(x => x.id === roadmapId);
+    if (!r) return;
+    const days = (r.days || []).map((d, i) => i === dayIdx ? { ...d, done: !d.done } : d);
+    try {
+      await setDoc(doc(db, "users", user.uid, "roadmaps", roadmapId), {
+        name: r.name, sourceFileName: r.sourceFileName, startDate: r.startDate,
+        totalDays: r.totalDays, pageSize: r.pageSize, totalPages: r.totalPages,
+        currentPage: r.currentPage, sourceText: r.sourceText, createdAt: r.createdAt,
+        days,
+      });
+      flashSaved();
+
+      // If that was the last day of the current page, automatically unlock the next one.
+      const pageSize = r.pageSize || r.totalDays;
+      const currentPage = r.currentPage || 1;
+      const totalPages = r.totalPages || 1;
+      const pageStart = (currentPage - 1) * pageSize;
+      const pageEnd = Math.min(currentPage * pageSize, r.totalDays);
+      const pageSlice = days.slice(pageStart, pageEnd);
+      const pageFullyDone = pageSlice.length > 0 && pageSlice.every(d => d.done);
+      if (pageFullyDone && currentPage < totalPages) {
+        generateRoadmapPage(roadmapId, currentPage + 1);
+      }
+    } catch (e) {
+      showToast("⚠️ Couldn't update — check connection");
+    }
+  }, [user, roadmaps, flashSaved, generateRoadmapPage]);
+
+  const deleteRoadmap = useCallback(async (id) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "roadmaps", id));
+      flashSaved();
+    } catch (e) {
+      showToast("⚠️ Couldn't delete — check connection");
+    }
+  }, [user, flashSaved]);
+
   const formProps = {
     taskInput, setTaskInput,
     priority,  setPriority,
@@ -1018,6 +1540,18 @@ function AppInner({ user }) {
     repeatDays, setRepeatDays,
     onAdd: addTask,
     pct, done, total,
+  };
+
+  const roadmapProps = {
+    roadmaps, roadmapsLoading,
+    importing: rmImporting, rmProgress, fileInputRef: rmFileInputRef,
+    rmName, setRmName, rmStartDate, setRmStartDate, rmTotalDays, setRmTotalDays,
+    rmPageSize, setRmPageSize,
+    generatingIds: rmGeneratingIds,
+    onImportFile: importRoadmapFromFile,
+    onToggleDay: toggleRoadmapDay,
+    onDelete: deleteRoadmap,
+    onUnlockNextPage: unlockNextRoadmapPage,
   };
 
   return (
@@ -1071,6 +1605,7 @@ function AppInner({ user }) {
               onAsk={askAI} chatRef={chatRef}
               onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
             />
+            <RoadmapPanel {...roadmapProps} />
             <RemindersPanel
               upcoming={upcoming}
               notifStatus={notifStatus}
@@ -1096,6 +1631,9 @@ function AppInner({ user }) {
               onAsk={askAI} chatRef={chatRef}
               onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
             />
+          )}
+          {screen === "roadmap" && (
+            <RoadmapPanel {...roadmapProps} />
           )}
           {screen === "reminders" && (
             <RemindersPanel

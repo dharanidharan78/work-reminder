@@ -382,3 +382,73 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
   font-family:'JetBrains Mono',monospace;
 }
 .login-switch:hover{color:#ef233c;}
+
+/* ══════════════════════════════════════════
+   ROADMAP PANEL
+   ══════════════════════════════════════════ */
+.rm-form{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+.rm-form-row{display:flex;gap:8px;}
+.rm-form-row .input-dark{flex:1;min-width:0;}
+
+.roadmap-list{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;}
+.roadmap-item{
+  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);
+  border-radius:12px;padding:12px;
+}
+.roadmap-item-head{
+  display:flex;align-items:center;justify-content:space-between;
+  cursor:pointer;gap:8px;
+}
+.roadmap-item-title{
+  color:#eee;font-size:13px;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.roadmap-item-sub{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:#3a3a3a;
+  margin:4px 0 8px;
+}
+.roadmap-days{
+  margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);
+  display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;
+}
+.roadmap-day-row{
+  display:flex;align-items:flex-start;gap:10px;padding:6px;border-radius:8px;
+  transition:background .15s;
+}
+.roadmap-day-row.done{opacity:.45;}
+.roadmap-day-row:hover{background:rgba(255,255,255,.03);}
+.roadmap-day-body{flex:1;min-width:0;}
+.roadmap-day-meta{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+.roadmap-day-num{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:#ef233c;
+  font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+}
+.roadmap-day-task{color:#ccc;font-size:12px;line-height:1.4;}
+.roadmap-day-row.done .roadmap-day-task{text-decoration:line-through;}
+
+/* ══════════════════════════════════════════
+   ROADMAP — PAGE-BASED GENERATION
+   ══════════════════════════════════════════ */
+.rm-odd-note{
+  background:rgba(239,35,60,.06);border:1px solid rgba(239,35,60,.25);
+  border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;
+}
+.rm-odd-label{font-size:10px;color:#ff8fa3;line-height:1.4;}
+
+.roadmap-generating{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:#ffb703;
+  margin-top:6px;
+}
+
+.roadmap-day-row.locked{opacity:.5;}
+.check-box.locked-box{
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;cursor:default;
+}
+.roadmap-day-row.locked .roadmap-day-task{font-style:italic;color:#666;}
+
+.rm-unlock-btn{
+  width:100%;margin-top:10px;background:rgba(255,255,255,.04)!important;
+  border:1px dashed rgba(255,255,255,.15)!important;color:#ccc!important;
+  font-size:11px!important;
+}
