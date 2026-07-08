@@ -1,6 +1,10 @@
 // ─── FIREBASE CONFIG & INIT ───────────────────────────────
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  RecaptchaVerifier,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getMessaging, isSupported } from "firebase/messaging";
 
@@ -21,6 +25,13 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Google sign-in provider (used for one-click "Continue with Google")
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
+
+// Exposed so Login.jsx can build an invisible reCAPTCHA for phone OTP
+export { RecaptchaVerifier };
 
 // Messaging only works in supported browsers (not all mobile browsers
 // support it, and it needs a secure context — https or localhost)

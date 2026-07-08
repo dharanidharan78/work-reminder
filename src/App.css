@@ -359,17 +359,93 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
   .toast.visible{transform:translateY(0);}
 }
 
-/* ── Login Screen ── */
-.login-screen{
-  min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:#000;padding:20px;
+/* ── Login / Auth screen: split hero + form ── */
+.auth-shell{
+  min-height:100vh;display:flex;
+  background:#000;
   font-family:'JetBrains Mono',monospace;
 }
+
+/* Left brand panel — desktop only */
+.auth-hero{
+  flex:1;position:relative;overflow:hidden;display:none;
+  background:#0a0a0a;
+  border-right:1px solid rgba(255,255,255,.06);
+  align-items:center;justify-content:center;
+  padding:60px;
+}
+.auth-hero-glow{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(239,35,60,.35), transparent 45%),
+    radial-gradient(circle at 80% 75%, rgba(239,35,60,.18), transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(255,255,255,.04), transparent 50%);
+  animation:auth-glow-drift 12s ease-in-out infinite alternate;
+}
+@keyframes auth-glow-drift{
+  from{transform:scale(1) translate(0,0);}
+  to{transform:scale(1.08) translate(-2%, -1%);}
+}
+.auth-hero-content{position:relative;z-index:1;max-width:420px;}
+.auth-hero .logo{margin-bottom:56px;}
+.auth-hero-title{
+  color:#fff;font-family:'Manrope',sans-serif;font-weight:800;
+  font-size:38px;line-height:1.15;letter-spacing:-.02em;margin:0 0 16px;
+}
+.auth-hero-text{
+  color:#8a8a8a;font-family:'Manrope',sans-serif;font-size:14.5px;
+  line-height:1.6;margin:0 0 32px;max-width:340px;
+}
+.auth-hero-points{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px;}
+.auth-hero-points li{
+  color:#ccc;font-family:'Manrope',sans-serif;font-size:13.5px;
+  padding-left:26px;position:relative;
+}
+.auth-hero-points li::before{
+  content:"✓";position:absolute;left:0;top:0;
+  color:#ef233c;font-weight:800;
+}
+
+@media(min-width:900px){
+  .auth-hero{display:flex;}
+}
+
+/* Right form panel */
+.auth-stage{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  padding:24px;position:relative;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(239,35,60,.10), transparent 40%),
+    #000;
+}
+.auth-mobile-logo{
+  display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:22px;
+}
+@media(min-width:900px){
+  .auth-mobile-logo{display:none;}
+}
+
 .login-card{
   width:100%;max-width:380px;background:#0d0d0d;border:1px solid #1f1f1f;
   border-radius:18px;padding:32px 28px;box-shadow:0 8px 40px rgba(0,0,0,.6);
 }
-.login-title{color:#fff;font-size:20px;margin:0 0 4px;text-align:center;}
+.login-card-premium{
+  position:relative;
+  background:linear-gradient(180deg, rgba(20,20,20,.95), rgba(8,8,8,.98));
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:22px;
+  padding:36px 30px;
+  box-shadow:
+    0 20px 60px rgba(0,0,0,.7),
+    0 0 0 1px rgba(239,35,60,.06) inset,
+    0 1px 0 rgba(255,255,255,.05) inset;
+  animation:auth-card-in .4s ease-out;
+}
+@keyframes auth-card-in{
+  from{opacity:0;transform:translateY(10px) scale(.98);}
+  to{opacity:1;transform:translateY(0) scale(1);}
+}
+.login-title{color:#fff;font-size:20px;margin:0 0 4px;text-align:center;font-weight:700;}
 .login-sub{color:#777;font-size:12px;margin:0 0 24px;text-align:center;}
 .login-form{display:flex;flex-direction:column;gap:12px;}
 .login-error{
@@ -382,6 +458,77 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
   font-family:'JetBrains Mono',monospace;
 }
 .login-switch:hover{color:#ef233c;}
+
+/* ── Google button ── */
+.btn-google{
+  width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
+  background:#fff;color:#1f1f1f;border:none;border-radius:12px;
+  padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer;
+  font-family:'Manrope',sans-serif;min-height:46px;
+  transition:transform .1s, box-shadow .2s;
+  box-shadow:0 2px 10px rgba(0,0,0,.25);
+}
+.btn-google:hover{box-shadow:0 4px 16px rgba(0,0,0,.35);}
+.btn-google:active{transform:scale(.97);}
+.btn-google:disabled{opacity:.7;cursor:default;}
+
+.auth-divider{
+  display:flex;align-items:center;gap:10px;margin:20px 0;
+  color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+}
+.auth-divider::before,.auth-divider::after{
+  content:"";flex:1;height:1px;background:rgba(255,255,255,.08);
+}
+
+.auth-submit{width:100%;}
+
+.auth-forgot-link{
+  background:none;border:none;color:#999;font-size:12px;
+  text-align:right;cursor:pointer;padding:0;margin-top:-2px;
+  font-family:'JetBrains Mono',monospace;
+}
+.auth-forgot-link:hover{color:#ef233c;}
+
+/* ── Forgot password / phone link panels ── */
+.auth-panel{display:flex;flex-direction:column;}
+.auth-back{
+  background:none;border:none;color:#777;font-size:12px;cursor:pointer;
+  padding:0;margin-bottom:16px;text-align:left;align-self:flex-start;
+  font-family:'JetBrains Mono',monospace;
+}
+.auth-back:hover{color:#ef233c;}
+
+.auth-method-toggle{
+  display:flex;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:4px;margin-bottom:18px;
+}
+.auth-tab{
+  flex:1;background:none;border:none;color:#888;font-size:12px;font-weight:700;
+  padding:9px 0;border-radius:9px;cursor:pointer;transition:background .2s,color .2s;
+  font-family:'Manrope',sans-serif;
+}
+.auth-tab.active{background:#ef233c;color:#fff;}
+
+.auth-otp-input{
+  text-align:center;letter-spacing:.4em;font-size:18px;font-weight:700;
+}
+
+.auth-info-box{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:16px;color:#bbb;font-size:12.5px;line-height:1.6;
+  font-family:'Manrope',sans-serif;
+}
+
+.auth-hint{
+  color:#555;font-size:11px;margin:0;text-align:center;
+  font-family:'Manrope',sans-serif;
+}
+
+.auth-success-icon{
+  width:56px;height:56px;border-radius:50%;background:rgba(52,168,83,.12);
+  border:1px solid rgba(52,168,83,.4);color:#34a853;font-size:26px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;margin:0 auto 18px;
+}
 
 /* ══════════════════════════════════════════
    ROADMAP PANEL
