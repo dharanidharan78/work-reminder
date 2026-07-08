@@ -133,7 +133,15 @@ const ICONS = {
   add:   "M12 4v16m8-8H4",
   check: "M5 13l4 4L19 7",
   close: "M6 18L18 6M6 6l12 12",
+  user:  "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z",
+  gear:  "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
+  edit:  "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+  mail:  "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
+  clock: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+  logout:"M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1",
 };
+
+const APP_VERSION = "10.0.0";
 
 function Icon({ d, size }) {
   return (
@@ -647,6 +655,149 @@ const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
   );
 };
 
+// ─── Profile ────────────────────────────────────────────────
+function initialsOf(name, email) {
+  const src = (name || "").trim() || (email || "").split("@")[0] || "?";
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src.slice(0, 2).toUpperCase();
+}
+
+function fmtDateTime(ms) {
+  if (!ms) return "—";
+  try {
+    return new Date(ms).toLocaleString(undefined, {
+      dateStyle: "medium", timeStyle: "short",
+    });
+  } catch (_) { return "—"; }
+}
+
+const Avatar = ({ user, size }) => {
+  const s = size || 36;
+  return user.photoURL ? (
+    <img src={user.photoURL} alt="" className="avatar-img"
+      style={{ width:s, height:s }} referrerPolicy="no-referrer" />
+  ) : (
+    <div className="avatar-fallback" style={{ width:s, height:s, fontSize:s*0.4 }}>
+      {initialsOf(user.displayName, user.email)}
+    </div>
+  );
+};
+
+const ProfileModal = ({ user, onClose, onToast }) => {
+  const [editing, setEditing]   = useState(false);
+  const [name, setName]         = useState(user.displayName || "");
+  const [saving, setSaving]     = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editing) setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
+  }, [editing]);
+
+  const provider = user.providerData?.[0]?.providerId === "google.com"
+    ? "Google" : "Email & Password";
+
+  const saveName = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === user.displayName) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      const { updateProfile } = await import("firebase/auth");
+      await updateProfile(auth.currentUser, { displayName: trimmed });
+      onToast && onToast("Profile updated");
+      setEditing(false);
+    } catch (e) {
+      onToast && onToast("Couldn't update name");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="add-modal-overlay" onClick={onClose}>
+      <div className="profile-modal" onClick={e => e.stopPropagation()}>
+        <div className="add-modal-header">
+          <span className="panel-label red" style={{ marginBottom:0 }}>
+            <div className="panel-dot" />Profile
+          </span>
+          <button className="del-btn" onClick={onClose}>
+            <Icon d={ICONS.close} size={18} />
+          </button>
+        </div>
+
+        <div className="profile-hero">
+          <Avatar user={user} size={64} />
+          <div className="profile-hero-info">
+            {editing ? (
+              <div className="profile-name-edit">
+                <input
+                  ref={inputRef} className="profile-name-input" value={name}
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && saveName()}
+                  maxLength={40}
+                />
+                <button className="profile-save-btn" disabled={saving} onClick={saveName}>
+                  {saving ? "…" : "Save"}
+                </button>
+                <button className="profile-cancel-btn"
+                  onClick={() => { setEditing(false); setName(user.displayName || ""); }}>
+                  <Icon d={ICONS.close} size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="profile-name-row">
+                <span className="profile-name">{user.displayName || "Unnamed"}</span>
+                <button className="profile-edit-btn" title="Edit name" onClick={() => setEditing(true)}>
+                  <Icon d={ICONS.edit} size={14} />
+                </button>
+              </div>
+            )}
+            <span className="profile-provider mono">{provider} account</span>
+          </div>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-row">
+            <Icon d={ICONS.mail} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">Signed in as</span>
+              <span className="profile-row-value">{user.email || "—"}</span>
+            </div>
+          </div>
+          <div className="profile-row">
+            <Icon d={ICONS.clock} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">Current session since</span>
+              <span className="profile-row-value">{fmtDateTime(Date.parse(user.metadata?.lastSignInTime))}</span>
+            </div>
+          </div>
+          <div className="profile-row">
+            <Icon d={ICONS.user} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">Account created</span>
+              <span className="profile-row-value">{fmtDateTime(Date.parse(user.metadata?.creationTime))}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-row">
+            <Icon d={ICONS.gear} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">App version</span>
+              <span className="profile-row-value mono">WORK FLOW v{APP_VERSION}</span>
+            </div>
+          </div>
+        </div>
+
+        <button className="profile-signout-btn" onClick={() => signOut(auth)}>
+          <Icon d={ICONS.logout} size={16} />Sign out
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const NAV_ITEMS = [
   { id:"tasks",     label:"Tasks"  },
   { id:"ai",        label:"AI"     },
@@ -720,6 +871,9 @@ function AppInner({ user }) {
   const [rmImporting, setRmImporting]   = useState(false);
   const [rmProgress, setRmProgress]     = useState("");
   const [rmGeneratingIds, setRmGeneratingIds] = useState(() => new Set());
+
+  const [showProfile, setShowProfile] = useState(false);
+  const [rightTab, setRightTab]       = useState("ai");
 
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
@@ -1565,6 +1719,10 @@ function AppInner({ user }) {
         <AddModal {...formProps} onClose={() => setShowAdd(false)} />
       )}
 
+      {showProfile && (
+        <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast} />
+      )}
+
       <div className="wrap">
         {/* Header */}
         <header className="header">
@@ -1583,8 +1741,8 @@ function AppInner({ user }) {
             )}
             <div className="clock">{clock}</div>
             <div className="stats-badge">{pct}% done</div>
-            <button className="del-btn" title="Sign out" onClick={() => signOut(auth)}>
-              <Icon d={ICONS.close} size={16} />
+            <button className="profile-btn" title="Profile" onClick={() => setShowProfile(true)}>
+              <Avatar user={user} size={30} />
             </button>
           </div>
         </header>
@@ -1599,20 +1757,40 @@ function AppInner({ user }) {
             <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
           </div>
           <div className="right-col">
-            <AIPanel
-              aiMessages={aiMessages} aiLoading={aiLoading}
-              aiInput={aiInput} setAiInput={setAiInput}
-              onAsk={askAI} chatRef={chatRef}
-              onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
-            />
-            <RoadmapPanel {...roadmapProps} />
-            <RemindersPanel
-              upcoming={upcoming}
-              notifStatus={notifStatus}
-              onRequestNotif={requestNotifPermission}
-            />
-            <StatsPanel total={total} done={done} pending={pending}
-              highCount={highCount} pct={pct} />
+            <div className="right-tabs">
+              {[
+                { id:"ai",        label:"AI",       icon:"ai"      },
+                { id:"roadmap",   label:"Roadmap",  icon:"roadmap" },
+                { id:"reminders", label:"Reminders",icon:"bell"    },
+                { id:"stats",     label:"Stats",    icon:"stats"   },
+              ].map(t => (
+                <button key={t.id}
+                  className={"right-tab-btn" + (rightTab === t.id ? " right-tab-active" : "")}
+                  onClick={() => setRightTab(t.id)}>
+                  <Icon d={ICONS[t.icon]} size={16} />{t.label}
+                </button>
+              ))}
+            </div>
+            {rightTab === "ai" && (
+              <AIPanel
+                aiMessages={aiMessages} aiLoading={aiLoading}
+                aiInput={aiInput} setAiInput={setAiInput}
+                onAsk={askAI} chatRef={chatRef}
+                onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
+              />
+            )}
+            {rightTab === "roadmap" && <RoadmapPanel {...roadmapProps} />}
+            {rightTab === "reminders" && (
+              <RemindersPanel
+                upcoming={upcoming}
+                notifStatus={notifStatus}
+                onRequestNotif={requestNotifPermission}
+              />
+            )}
+            {rightTab === "stats" && (
+              <StatsPanel total={total} done={done} pending={pending}
+                highCount={highCount} pct={pct} />
+            )}
           </div>
         </div>
 
