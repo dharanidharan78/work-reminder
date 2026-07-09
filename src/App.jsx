@@ -14,6 +14,21 @@ import {
 } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import Login from "./Login";
+import LandingPage from "./LandingPage";
+
+// ─── ICONS (upload / spinner) ──────────────────────────────
+const UploadIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 16V4M12 4L7 9M12 4l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const SpinnerIcon = () => (
+  <svg className="icon-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.2"/>
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
 
 // ─── LOCAL FALLBACK (used only for the "notified" set, which is
 // purely a local de-dupe flag and doesn't need to sync) ───────
@@ -392,12 +407,13 @@ const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
       }}
     />
     <button
-      className="qp-btn import-btn"
-      style={{ width: "100%", marginTop: "8px" }}
+      className="icon-upload-btn"
+      title={importing ? "Reading file & adding tasks…" : "Upload plan (txt/pdf/excel/word) → auto-add tasks"}
+      aria-label="Upload plan file"
       disabled={importing}
       onClick={() => fileInputRef.current && fileInputRef.current.click()}
     >
-      {importing ? "📁 Reading file & adding tasks…" : "📁 Upload plan (txt/pdf/excel/word) → auto-add tasks"}
+      {importing ? <SpinnerIcon /> : <UploadIcon />}
     </button>
   </div>
 );
@@ -550,14 +566,13 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
           }}
         />
         <button
-          className="qp-btn import-btn"
-          style={{ width: "100%", marginTop: "8px" }}
+          className="icon-upload-btn"
+          title={importing ? (rmProgress || "Building page 1…") : "Upload roadmap file → split into pages of daily tasks"}
+          aria-label="Upload roadmap file"
           disabled={importing}
           onClick={() => fileInputRef.current && fileInputRef.current.click()}
         >
-          {importing
-            ? "🗺️ " + (rmProgress || "Building page 1…")
-            : "📁 Upload roadmap file → split into pages of daily tasks"}
+          {importing ? <SpinnerIcon /> : <UploadIcon />}
         </button>
       </div>
 
@@ -724,14 +739,13 @@ const SummaryPanel = ({ summaries, summariesLoading, importing, sumProgress, fil
         }}
       />
       <button
-        className="qp-btn import-btn"
-        style={{ width: "100%" }}
+        className="icon-upload-btn"
+        title={importing ? (sumProgress || "Working…") : "Upload a PDF / Word / text file to summarize"}
+        aria-label="Upload document to summarize"
         disabled={importing}
         onClick={() => fileInputRef.current && fileInputRef.current.click()}
       >
-        {importing
-          ? "📄 " + (sumProgress || "Working…")
-          : "📁 Upload a PDF / Word / text file to summarize"}
+        {importing ? <SpinnerIcon /> : <UploadIcon />}
       </button>
 
       {summariesLoading ? (
@@ -2160,7 +2174,11 @@ function AppInner({ user }) {
         {/* Header */}
         <header className="header">
           <div className="logo">
-            <div className="logo-diamond" />
+            <div className="logo-mark">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M4 12l4 6 4-11 4 11 4-6" stroke="#0a0e1a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
             <div>
               <div className="logo-name">WORK FLOW</div>
               <div className="logo-sub">Task Intelligence</div>
@@ -2276,6 +2294,9 @@ function AppInner({ user }) {
 
 export default function App() {
   const [user, setUser]       = useState(undefined); // undefined = loading
+  const [showLanding, setShowLanding] = useState(() => {
+    try { return sessionStorage.getItem("wf-skip-landing") !== "1"; } catch { return true; }
+  });
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
@@ -2283,20 +2304,27 @@ export default function App() {
 
   if (user === undefined) {
     return (
-      <div style={{
-        minHeight: "100vh", background: "#000", color: "#888",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "monospace", fontSize: 14,
-      }}>
-        Loading WORK FLOW…
+      <div className="wf-loading-screen">
+        <div className="wf-loading-mark">W</div>
+        <div className="wf-loading-text">Loading WORK FLOW…</div>
       </div>
     );
   }
 
   if (!user) {
+    if (showLanding) {
+      return (
+        <ErrorBoundary>
+          <LandingPage onEnter={() => {
+            try { sessionStorage.setItem("wf-skip-landing", "1"); } catch {}
+            setShowLanding(false);
+          }} />
+        </ErrorBoundary>
+      );
+    }
     return (
       <ErrorBoundary>
-        <Login />
+        <Login onBackToLanding={() => setShowLanding(true)} />
       </ErrorBoundary>
     );
   }

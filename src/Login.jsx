@@ -390,7 +390,7 @@ function LinkPhoneStep({ onDone }) {
    Main Login screen: Sign in / Sign up, straight-through
    Google auth, and entry into the forgot-password flow.
 ───────────────────────────────────────────────────────── */
-export default function Login() {
+export default function Login({ onBackToLanding }) {
   const [view, setView] = useState("signin"); // 'signin' | 'signup' | 'forgot' | 'linkPhone'
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -449,7 +449,11 @@ export default function Login() {
         <div className="auth-hero-glow" />
         <div className="auth-hero-content">
           <div className="logo">
-            <div className="logo-diamond" />
+            <div className="logo-mark">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M4 12l4 6 4-11 4 11 4-6" stroke="#0a0e1a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
             <div>
               <div className="logo-name">WORK FLOW</div>
               <div className="logo-sub">Task Intelligence</div>
@@ -467,6 +471,11 @@ export default function Login() {
         </div>
       </div>
       <div className="auth-stage">
+        {onBackToLanding && (
+          <button type="button" className="auth-back-landing" onClick={onBackToLanding}>
+            ← Back to home
+          </button>
+        )}
         <div className="login-card login-card-premium">{children}</div>
       </div>
     </div>
@@ -487,7 +496,11 @@ export default function Login() {
   return shell(
     <>
       <div className="auth-mobile-logo">
-        <div className="logo-diamond" />
+        <div className="logo-mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M4 12l4 6 4-11 4 11 4-6" stroke="#0a0e1a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
         <div>
           <div className="logo-name">WORK FLOW</div>
           <div className="logo-sub">Task Intelligence</div>
