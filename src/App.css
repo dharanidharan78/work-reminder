@@ -700,3 +700,81 @@ body{background:#000;-webkit-tap-highlight-color:transparent;}
   .header{margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.05);}
   .logo-name{font-size:17px;}
 }
+
+/* ══════════════════════════════════════════
+   ROADMAP → RESOURCES (free videos / courses)
+   ══════════════════════════════════════════ */
+.rm-resources{
+  margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);
+}
+.rm-resources-head{
+  display:flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  color:#888;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px;
+}
+.rm-topic-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.rm-topic-chip{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);
+  color:#ccc;font-size:11px;padding:6px 10px;border-radius:99px;cursor:pointer;
+  transition:all .15s;font-family:'JetBrains Mono',monospace;
+}
+.rm-topic-chip:hover{border-color:rgba(255,255,255,.25);color:#fff;}
+.rm-topic-chip.active{background:rgba(239,35,60,.14);border-color:rgba(239,35,60,.4);color:#ff8fa3;}
+
+.rm-resource-cards{
+  display:flex;flex-direction:column;gap:6px;margin-top:10px;
+  animation:rmFadeIn .18s ease;
+}
+@keyframes rmFadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+.rm-resource-card{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;padding:9px 10px;text-decoration:none;
+  transition:all .15s;
+}
+.rm-resource-card:hover{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.16);}
+.rm-resource-emoji{font-size:18px;flex-shrink:0;}
+.rm-resource-info{display:flex;flex-direction:column;min-width:0;flex:1;}
+.rm-resource-platform{color:#eee;font-size:12px;font-weight:600;}
+.rm-resource-title{
+  color:#666;font-size:10px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;margin-top:1px;
+}
+.rm-price-badge{
+  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  padding:3px 8px;border-radius:99px;flex-shrink:0;letter-spacing:.3px;
+}
+.rm-price-badge.free{background:rgba(46,204,113,.14);color:#4ade80;}
+.rm-price-badge.mid{background:rgba(255,183,3,.14);color:#ffb703;}
+.rm-price-badge.paid{background:rgba(239,35,60,.14);color:#ff8fa3;}
+
+/* ══════════════════════════════════════════
+   SUMMARIZE + VOICE MODE
+   ══════════════════════════════════════════ */
+.sum-bullets{
+  list-style:none;margin:10px 0 0;padding:10px 0 0;
+  border-top:1px solid rgba(255,255,255,.06);
+  display:flex;flex-direction:column;gap:8px;
+}
+.sum-bullet{
+  position:relative;padding-left:16px;color:#ccc;font-size:12.5px;line-height:1.5;
+}
+.sum-bullet::before{
+  content:'';position:absolute;left:0;top:7px;
+  width:5px;height:5px;border-radius:50%;background:#ef233c;
+}
+.sum-bullet.speaking{color:#fff;}
+.sum-bullet.speaking::before{background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.7);}
+
+.sum-voice-row{display:flex;gap:8px;margin-top:12px;}
+.sum-voice-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  font-size:11px!important;
+}
+
+.sum-verify-note{
+  margin-top:10px;font-size:10px;color:#665;line-height:1.4;
+  background:rgba(255,183,3,.06);border:1px solid rgba(255,183,3,.2);
+  border-radius:8px;padding:8px 10px;
+}
+

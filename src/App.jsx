@@ -139,9 +139,37 @@ const ICONS = {
   mail:  "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
   clock: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
   logout:"M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1",
+  summary:"M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+  speaker:"M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z",
+  pause:"M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z",
+  play:"M14.752 11.168l-6.518-3.759A1 1 0 007 8.276v7.448a1 1 0 001.234.972l.5-.14M14.752 11.168l-6.518 3.759M14.752 11.168L21 7.5v9L14.752 11.168zM9 20a9 9 0 100-18 9 9 0 000 18z",
+  stop:"M9 9h6v6H9V9zm-6 3a9 9 0 1118 0 9 9 0 01-18 0z",
 };
 
-const APP_VERSION = "10.0.0";
+const APP_VERSION = "10.1.0";
+
+// ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
+// Real, always-valid search-results links — never AI-guessed URLs,
+// so nothing ever 404s. The AI only picks the topic keywords;
+// this map turns each keyword into working links, at zero extra
+// token cost per platform.
+const RESOURCE_PLATFORMS = [
+  { key:"youtube",      label:"YouTube",      emoji:"🎥", price:"Free",         priceClass:"free",
+    url: (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " tutorial") },
+  { key:"freecodecamp", label:"freeCodeCamp", emoji:"🆓", price:"Free",         priceClass:"free",
+    url: (q) => "https://www.freecodecamp.org/news/search/?query=" + encodeURIComponent(q) },
+  { key:"coursera",     label:"Coursera",     emoji:"🎓", price:"Free–Paid",    priceClass:"mid",
+    url: (q) => "https://www.coursera.org/search?query=" + encodeURIComponent(q) },
+  { key:"udemy",        label:"Udemy",        emoji:"💰", price:"Paid (budget)",priceClass:"paid",
+    url: (q) => "https://www.udemy.com/courses/search/?q=" + encodeURIComponent(q) },
+];
+
+function buildResourceLinks(topic) {
+  return RESOURCE_PLATFORMS.map(p => ({
+    key: p.key, label: p.label, emoji: p.emoji, price: p.price, priceClass: p.priceClass,
+    url: p.url(topic),
+  }));
+}
 
 function Icon({ d, size }) {
   return (
@@ -460,6 +488,7 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         generatingIds,
                         onImportFile, onToggleDay, onDelete, onUnlockNextPage }) => {
   const [expandedId, setExpandedId] = useState(null);
+  const [activeTopic, setActiveTopic] = useState(null);
   const totalDaysNum = parseInt(rmTotalDays, 10) || 0;
   const isOdd = totalDaysNum > 0 && totalDaysNum % 2 !== 0;
   const suggestedPageSize = totalDaysNum > 0 ? Math.ceil(totalDaysNum / 2) : "";
@@ -550,7 +579,7 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
             const hasMorePages = currentPage < totalPages;
             return (
               <div key={r.id} className="roadmap-item">
-                <div className="roadmap-item-head" onClick={() => setExpandedId(isOpen ? null : r.id)}>
+                <div className="roadmap-item-head" onClick={() => { setExpandedId(isOpen ? null : r.id); setActiveTopic(null); }}>
                   <div className="roadmap-item-title">{r.name || "Roadmap"}</div>
                   <button
                     className="del-btn"
@@ -609,6 +638,156 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         🔓 Unlock page {currentPage + 1} of {totalPages} now
                       </button>
                     )}
+
+                    {/* Learning resources — free videos / free & paid courses,
+                        picked from the AI-extracted topics for this roadmap.
+                        Links are built locally (not by the AI), so they always
+                        open real, working search results — never a broken URL. */}
+                    <div className="rm-resources">
+                      <div className="rm-resources-head">
+                        📚 Resources
+                        {r.topicsLoading && <span className="panel-hint">finding topics…</span>}
+                      </div>
+                      {(!r.topics || r.topics.length === 0) && !r.topicsLoading ? (
+                        <div className="empty-small">No topics detected yet</div>
+                      ) : (
+                        <>
+                          <div className="rm-topic-chips">
+                            {(r.topics || []).map(topic => (
+                              <button
+                                key={topic}
+                                className={"rm-topic-chip" + (activeTopic === topic ? " active" : "")}
+                                onClick={() => setActiveTopic(activeTopic === topic ? null : topic)}
+                              >
+                                {topic}
+                              </button>
+                            ))}
+                          </div>
+                          {activeTopic && (
+                            <div className="rm-resource-cards">
+                              {buildResourceLinks(activeTopic).map(res => (
+                                <a
+                                  key={res.key}
+                                  className="rm-resource-card"
+                                  href={res.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <span className="rm-resource-emoji">{res.emoji}</span>
+                                  <span className="rm-resource-info">
+                                    <span className="rm-resource-platform">{res.label}</span>
+                                    <span className="rm-resource-title">{activeTopic}</span>
+                                  </span>
+                                  <span className={"rm-price-badge " + res.priceClass}>{res.price}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── SUMMARY PANEL ──────────────────────────────────────────
+// Upload a PDF / Word / text file → clean AI bullet summary,
+// with an optional "Read aloud" voice mode (Web Speech API).
+const SummaryPanel = ({ summaries, summariesLoading, importing, sumProgress, fileInputRef,
+                        speakingId, speechPaused,
+                        onImportFile, onDelete, onSpeak, onTogglePause, onStop }) => {
+  const [expandedId, setExpandedId] = useState(null);
+
+  return (
+    <div className="card-dark">
+      <div className="panel-label gray">
+        📄 Summarize
+        <span className="panel-hint">upload a file → bullet summary → read aloud</span>
+      </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+        style={{ display: "none" }}
+        onChange={e => {
+          const file = e.target.files && e.target.files[0];
+          if (file) onImportFile(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        className="qp-btn import-btn"
+        style={{ width: "100%" }}
+        disabled={importing}
+        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+      >
+        {importing
+          ? "📄 " + (sumProgress || "Working…")
+          : "📁 Upload a PDF / Word / text file to summarize"}
+      </button>
+
+      {summariesLoading ? (
+        <div className="empty-small">Loading…</div>
+      ) : summaries.length === 0 ? (
+        <div className="empty-small">No summaries yet — upload a file above</div>
+      ) : (
+        <div className="roadmap-list">
+          {summaries.map(s => {
+            const isOpen = expandedId === s.id;
+            const isSpeakingThis = speakingId === s.id;
+            return (
+              <div key={s.id} className="roadmap-item">
+                <div className="roadmap-item-head" onClick={() => setExpandedId(isOpen ? null : s.id)}>
+                  <div className="roadmap-item-title">{s.title || "Summary"}</div>
+                  <button
+                    className="del-btn"
+                    onClick={e => { e.stopPropagation(); onDelete(s.id); }}
+                  >
+                    <Icon d={ICONS.close} size={14} />
+                  </button>
+                </div>
+                <div className="roadmap-item-sub">
+                  {s.sourceFileName} · {s.bullets.length} points
+                  {s.truncated ? " · long file, summarized from the first part" : ""}
+                </div>
+
+                {isOpen && (
+                  <>
+                    <ul className="sum-bullets">
+                      {s.bullets.map((b, i) => (
+                        <li key={i} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
+                      ))}
+                    </ul>
+
+                    <div className="sum-voice-row">
+                      {!isSpeakingThis ? (
+                        <button className="qp-btn sum-voice-btn" onClick={() => onSpeak(s)}>
+                          <Icon d={ICONS.speaker} size={14} /> Read aloud
+                        </button>
+                      ) : (
+                        <>
+                          <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
+                            <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
+                            {speechPaused ? " Resume" : " Pause"}
+                          </button>
+                          <button className="qp-btn sum-voice-btn" onClick={onStop}>
+                            <Icon d={ICONS.stop} size={14} /> Stop
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="sum-verify-note">
+                      ⚠️ AI-generated summary — double-check against the original file for anything critical.
+                    </div>
                   </>
                 )}
               </div>
@@ -802,6 +981,7 @@ const NAV_ITEMS = [
   { id:"tasks",     label:"Tasks"  },
   { id:"ai",        label:"AI"     },
   { id:"roadmap",   label:"Road"   },
+  { id:"summary",   label:"Docs"   },
   { id:"reminders", label:"Remind" },
   { id:"stats",     label:"Stats"  },
 ];
@@ -872,6 +1052,15 @@ function AppInner({ user }) {
   const [rmProgress, setRmProgress]     = useState("");
   const [rmGeneratingIds, setRmGeneratingIds] = useState(() => new Set());
 
+  // ── Summarize: upload a PDF/Word/text file, get a clean AI bullet
+  // summary, and optionally have it read aloud (Web Speech API).
+  const [summaries, setSummaries]       = useState([]);
+  const [summariesLoading, setSummariesLoading] = useState(true);
+  const [sumImporting, setSumImporting] = useState(false);
+  const [sumProgress, setSumProgress]   = useState("");
+  const [speakingId, setSpeakingId]     = useState(null);
+  const [speechPaused, setSpeechPaused] = useState(false);
+
   const [showProfile, setShowProfile] = useState(false);
   const [rightTab, setRightTab]       = useState("ai");
 
@@ -880,6 +1069,7 @@ function AppInner({ user }) {
   const desktopInpRef  = useRef(null);
   const fileInputRef   = useRef(null);
   const rmFileInputRef = useRef(null);
+  const sumFileInputRef = useRef(null);
 
   // Clock
   useEffect(() => {
@@ -931,6 +1121,32 @@ function AppInner({ user }) {
     );
     return () => unsub();
   }, [user]);
+
+  // Summaries sync — same real-time pattern, own collection.
+  useEffect(() => {
+    if (!user) return;
+    const sumRef = collection(db, "users", user.uid, "summaries");
+    const q = query(sumRef, orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setSummaries(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setSummariesLoading(false);
+      },
+      (err) => {
+        console.error("Summary sync error:", err);
+        setSummariesLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [user]);
+
+  // Stop any speech synthesis if the component unmounts mid-read.
+  useEffect(() => {
+    return () => {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
+  }, []);
 
   // FCM — register for push notifications and listen for foreground pushes
   useEffect(() => {
@@ -1380,6 +1596,154 @@ function AppInner({ user }) {
     setImporting(false);
   }
 
+  // Upload any supported document (PDF, Word, txt/md/csv/json, Excel) and
+  // get back a clean, short bullet-point summary — plus a "Read aloud"
+  // voice mode so it can be listened to instead of read. One single Groq
+  // call per file, kept small (max_tokens 500) since only a summary comes
+  // back, not the whole document.
+  async function summarizeFileFromFile(file) {
+    if (!user || sumImporting) return;
+    setSumImporting(true);
+    setSumProgress("Reading file…");
+    try {
+      const rawText = await extractTextFromFile(file);
+      const cleaned = (rawText || "").replace(/\s+/g, " ").trim();
+      if (!cleaned) {
+        showToast("⚠️ Couldn't find any readable text in that file");
+        setSumImporting(false);
+        setSumProgress("");
+        return;
+      }
+      const trimmed = cleaned.slice(0, 14000);
+      const wasTruncated = cleaned.length > trimmed.length;
+
+      const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
+      if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+        showToast("⚠️ Groq API key not set — can't summarize the file");
+        setSumImporting(false);
+        setSumProgress("");
+        return;
+      }
+
+      setSumProgress("Summarizing…");
+      const sysPrompt =
+        "Summarize the document into clean, short bullet points a busy student can skim.\n" +
+        "Output ONLY a raw JSON object — no markdown, no code fences, no explanation — with exactly these fields:\n" +
+        '  "title": a short 3-6 word title guessed from the content\n' +
+        '  "bullets": an array of 6 to 12 short bullet strings (max ~20 words each), covering only what is actually in the text — never invent facts not present\n' +
+        "Stay strictly factual to the source text below.";
+
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + GROQ_KEY,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 500,
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user",   content: trimmed },
+          ],
+        }),
+      });
+
+      const d = await r.json();
+      if (d.error) {
+        showToast("⚠️ Groq error: " + d.error.message);
+        setSumImporting(false);
+        setSumProgress("");
+        return;
+      }
+
+      let raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+      raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+
+      const bullets = parsed && Array.isArray(parsed.bullets)
+        ? parsed.bullets.map(b => String(b || "").trim()).filter(Boolean).slice(0, 12)
+        : [];
+
+      if (bullets.length === 0) {
+        showToast("⚠️ Couldn't summarize that file — try a different one");
+        setSumImporting(false);
+        setSumProgress("");
+        return;
+      }
+
+      const id = String(Date.now());
+      const title = (parsed && parsed.title ? String(parsed.title).trim() : "") ||
+        file.name.replace(/\.[^.]+$/, "");
+      const summaryDoc = {
+        title, sourceFileName: file.name, bullets,
+        sourceChars: cleaned.length, truncated: wasTruncated,
+        createdAt: Date.now(),
+      };
+      await setDoc(doc(db, "users", user.uid, "summaries", id), summaryDoc);
+      flashSaved();
+      showToast("✅ Summarized \"" + file.name + "\" into " + bullets.length + " points");
+    } catch (err) {
+      showToast("⚠️ Couldn't read that file: " + err.message);
+    }
+    setSumProgress("");
+    setSumImporting(false);
+  }
+
+  const deleteSummary = useCallback(async (id) => {
+    if (!user) return;
+    try {
+      if (speakingId === id && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        setSpeakingId(null);
+        setSpeechPaused(false);
+      }
+      await deleteDoc(doc(db, "users", user.uid, "summaries", id));
+      flashSaved();
+    } catch (e) {
+      showToast("⚠️ Couldn't delete — check connection");
+    }
+  }, [user, flashSaved, speakingId]);
+
+  // Voice mode — reads the title + bullets aloud using the browser's
+  // built-in Web Speech API (no extra API calls, works offline).
+  const speakSummary = useCallback((summary) => {
+    if (!("speechSynthesis" in window)) {
+      showToast("⚠️ Voice reading isn't supported in this browser");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const text = summary.title + ". " +
+      summary.bullets.map((b, i) => "Point " + (i + 1) + ": " + b + ".").join(" ");
+    const utter = new window.SpeechSynthesisUtterance(text);
+    utter.rate = 0.98;
+    utter.pitch = 1;
+    utter.onend = () => { setSpeakingId(null); setSpeechPaused(false); };
+    utter.onerror = () => { setSpeakingId(null); setSpeechPaused(false); };
+    window.speechSynthesis.speak(utter);
+    setSpeakingId(summary.id);
+    setSpeechPaused(false);
+  }, []);
+
+  const togglePauseSpeech = useCallback(() => {
+    if (!("speechSynthesis" in window)) return;
+    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+      setSpeechPaused(true);
+    } else if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      setSpeechPaused(false);
+    }
+  }, []);
+
+  const stopSpeech = useCallback(() => {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    setSpeakingId(null);
+    setSpeechPaused(false);
+  }, []);
+
   // Parses Groq's rate-limit reset headers, e.g. "7.66s" or "500ms", into milliseconds.
   function parseGroqResetMs(value) {
     if (!value) return 0;
@@ -1497,6 +1861,51 @@ function AppInner({ user }) {
     return { byDay, error: null };
   }
 
+  // One small, one-shot Groq call that pulls 5-8 topic/skill keywords out
+  // of the roadmap text (e.g. "React", "REST APIs", "MongoDB"). Kept to a
+  // tiny max_tokens since this never needs to run again for this roadmap —
+  // the resulting topics are turned into real platform links locally
+  // (see buildResourceLinks), so no further AI calls or token spend happen
+  // when the user browses resources.
+  async function extractRoadmapTopics(GROQ_KEY, sourceText, roadmapName) {
+    try {
+      const sysPrompt =
+        "Extract the 5 to 8 core skills/technologies/subjects taught in this roadmap.\n" +
+        "Output ONLY a raw JSON array of short strings (1-3 words each, e.g. \"React\", \"REST APIs\"). " +
+        "No markdown, no explanation, no duplicates.";
+      const snippet = (roadmapName ? roadmapName + "\n" : "") + sourceText.slice(0, 2500);
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + GROQ_KEY,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 150,
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user",   content: snippet },
+          ],
+        }),
+      });
+      const d = await r.json();
+      if (d.error) return [];
+      let raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+      raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+      let items;
+      try { items = JSON.parse(raw); } catch (e) { items = []; }
+      if (!Array.isArray(items)) return [];
+      return items
+        .map(t => String(t || "").trim())
+        .filter(Boolean)
+        .slice(0, 8);
+    } catch (e) {
+      return []; // resources are a bonus, never block the roadmap itself
+    }
+  }
+
   // Upload a roadmap/plan file — same supported formats as task import.
   // To dodge Groq's token limits for good (instead of just working around
   // them with retries), the roadmap is split into PAGES:
@@ -1565,12 +1974,23 @@ function AppInner({ user }) {
         pageSize, totalPages, currentPage: 1,
         sourceText: trimmed, // kept so later pages can be generated without re-uploading
         createdAt: Date.now(), days,
+        topics: [], topicsLoading: true,
       };
       await setDoc(doc(db, "users", user.uid, "roadmaps", id), roadmapDoc);
       flashSaved();
       showToast("✅ Page 1 of " + totalPages + " ready (" + page1End + " days) — the rest unlock as you complete each page");
       setRmName("");
       setRmPageSize("");
+
+      // Fire-and-forget: find topics → build Resources, without holding up
+      // page 1 or spending any extra tokens beyond this one small call.
+      extractRoadmapTopics(GROQ_KEY, trimmed, name).then(async (topics) => {
+        try {
+          await setDoc(doc(db, "users", user.uid, "roadmaps", id), {
+            ...roadmapDoc, topics, topicsLoading: false,
+          });
+        } catch (e) { /* resources are a bonus — silently skip on failure */ }
+      });
     } catch (err) {
       showToast("⚠️ Couldn't read that file: " + err.message);
     }
@@ -1627,6 +2047,7 @@ function AppInner({ user }) {
         totalDays: r.totalDays, pageSize: r.pageSize, totalPages: r.totalPages,
         currentPage: pageIndex, sourceText: r.sourceText, createdAt: r.createdAt,
         days: newDays,
+        topics: r.topics || [], topicsLoading: !!r.topicsLoading,
       });
       flashSaved();
       showToast("✅ Page " + pageIndex + " of " + r.totalPages + " unlocked!");
@@ -1656,6 +2077,7 @@ function AppInner({ user }) {
         totalDays: r.totalDays, pageSize: r.pageSize, totalPages: r.totalPages,
         currentPage: r.currentPage, sourceText: r.sourceText, createdAt: r.createdAt,
         days,
+        topics: r.topics || [], topicsLoading: !!r.topicsLoading,
       });
       flashSaved();
 
@@ -1706,6 +2128,17 @@ function AppInner({ user }) {
     onToggleDay: toggleRoadmapDay,
     onDelete: deleteRoadmap,
     onUnlockNextPage: unlockNextRoadmapPage,
+  };
+
+  const summaryProps = {
+    summaries, summariesLoading,
+    importing: sumImporting, sumProgress, fileInputRef: sumFileInputRef,
+    speakingId, speechPaused,
+    onImportFile: summarizeFileFromFile,
+    onDelete: deleteSummary,
+    onSpeak: speakSummary,
+    onTogglePause: togglePauseSpeech,
+    onStop: stopSpeech,
   };
 
   return (
@@ -1761,6 +2194,7 @@ function AppInner({ user }) {
               {[
                 { id:"ai",        label:"AI",       icon:"ai"      },
                 { id:"roadmap",   label:"Roadmap",  icon:"roadmap" },
+                { id:"summary",   label:"Docs",     icon:"summary" },
                 { id:"reminders", label:"Reminders",icon:"bell"    },
                 { id:"stats",     label:"Stats",    icon:"stats"   },
               ].map(t => (
@@ -1780,6 +2214,7 @@ function AppInner({ user }) {
               />
             )}
             {rightTab === "roadmap" && <RoadmapPanel {...roadmapProps} />}
+            {rightTab === "summary" && <SummaryPanel {...summaryProps} />}
             {rightTab === "reminders" && (
               <RemindersPanel
                 upcoming={upcoming}
@@ -1812,6 +2247,9 @@ function AppInner({ user }) {
           )}
           {screen === "roadmap" && (
             <RoadmapPanel {...roadmapProps} />
+          )}
+          {screen === "summary" && (
+            <SummaryPanel {...summaryProps} />
           )}
           {screen === "reminders" && (
             <RemindersPanel
