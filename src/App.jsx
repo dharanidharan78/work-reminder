@@ -159,9 +159,17 @@ const ICONS = {
   pause:"M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z",
   play:"M14.752 11.168l-6.518-3.759A1 1 0 007 8.276v7.448a1 1 0 001.234.972l.5-.14M14.752 11.168l-6.518 3.759M14.752 11.168L21 7.5v9L14.752 11.168zM9 20a9 9 0 100-18 9 9 0 000 18z",
   stop:"M9 9h6v6H9V9zm-6 3a9 9 0 1118 0 9 9 0 01-18 0z",
+  dashboard:"M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zm0 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z",
+  message:"M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+  calendar:"M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+  lock:"M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2h8z",
+  note:"M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+  folder:"M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z",
+  pdf:"M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 0v5h5",
+  chevronLeft:"M15 19l-7-7 7-7",
 };
 
-const APP_VERSION = "10.1.0";
+const APP_VERSION = "12.0.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -616,7 +624,8 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                   <div className="roadmap-generating">🔄 Unlocking page {currentPage + 1} of {totalPages}…</div>
                 )}
                 {isOpen && (
-                  <>
+                  <div className="roadmap-expanded-grid">
+                    <div className="roadmap-left-col">
                     <div className="roadmap-days">
                       {days.map((d, i) => {
                         const locked = !d.generated;
@@ -653,11 +662,14 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         🔓 Unlock page {currentPage + 1} of {totalPages} now
                       </button>
                     )}
+                    </div>
 
                     {/* Learning resources — free videos / free & paid courses,
                         picked from the AI-extracted topics for this roadmap.
                         Links are built locally (not by the AI), so they always
-                        open real, working search results — never a broken URL. */}
+                        open real, working search results — never a broken URL.
+                        Shown parallel to the (possibly locked) next session. */}
+                    <div className="roadmap-right-col">
                     <div className="rm-resources">
                       <div className="rm-resources-head">
                         📚 Resources
@@ -701,7 +713,8 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         </>
                       )}
                     </div>
-                  </>
+                    </div>
+                  </div>
                 )}
               </div>
             );
@@ -816,33 +829,108 @@ const SummaryPanel = ({ summaries, summariesLoading, importing, sumProgress, fil
 const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
                     dueDate, setDueDate, dueTime, setDueTime,
                     repeat, setRepeat, repeatDays, setRepeatDays,
-                    onAdd, pct, done, total }) => {
+                    onAdd, pct, done, total,
+                    onImportTasks, importingTasks, taskFileInputRef,
+                    onSummarize, importingSummary, sumProgress, sumFileInputRef,
+                    initialTab }) => {
   const ref = useRef(null);
+  const [tab, setTab] = useState(initialTab || "task");
   useEffect(() => {
+    if (tab !== "task") return;
     const t = setTimeout(() => { if (ref.current) ref.current.focus(); }, 80);
     return () => clearTimeout(t);
-  }, []);
+  }, [tab]);
+
   return (
     <div className="add-modal-overlay" onClick={onClose}>
       <div className="add-modal" onClick={e => e.stopPropagation()}>
         <div className="add-modal-header">
           <span className="panel-label red" style={{ marginBottom:0 }}>
-            <div className="panel-dot" />New Task
+            <div className="panel-dot" />Add
           </span>
           <button className="del-btn" onClick={onClose}>
             <Icon d={ICONS.close} size={18} />
           </button>
         </div>
-        <AddForm
-          inputRef={ref}
-          taskInput={taskInput} setTaskInput={setTaskInput}
-          priority={priority}   setPriority={setPriority}
-          dueDate={dueDate}     setDueDate={setDueDate}
-          dueTime={dueTime}     setDueTime={setDueTime}
-          repeat={repeat}       setRepeat={setRepeat}
-          repeatDays={repeatDays} setRepeatDays={setRepeatDays}
-          onAdd={onAdd} pct={pct} done={done} total={total}
-        />
+
+        <div className="add-modal-tabs">
+          <button className={"add-modal-tab" + (tab === "task" ? " active" : "")}
+            onClick={() => setTab("task")}>
+            <Icon d={ICONS.add} size={14} />Task
+          </button>
+          <button className={"add-modal-tab" + (tab === "import" ? " active" : "")}
+            onClick={() => setTab("import")}>
+            <Icon d={ICONS.ai} size={14} />Auto-add
+          </button>
+          <button className={"add-modal-tab" + (tab === "summarize" ? " active" : "")}
+            onClick={() => setTab("summarize")}>
+            <Icon d={ICONS.summary} size={14} />Summarize
+          </button>
+        </div>
+
+        {tab === "task" && (
+          <AddForm
+            inputRef={ref}
+            taskInput={taskInput} setTaskInput={setTaskInput}
+            priority={priority}   setPriority={setPriority}
+            dueDate={dueDate}     setDueDate={setDueDate}
+            dueTime={dueTime}     setDueTime={setDueTime}
+            repeat={repeat}       setRepeat={setRepeat}
+            repeatDays={repeatDays} setRepeatDays={setRepeatDays}
+            onAdd={onAdd} pct={pct} done={done} total={total}
+          />
+        )}
+
+        {tab === "import" && (
+          <div className="add-modal-file-tab">
+            <p className="add-modal-file-hint">
+              Upload a plan file — txt, md, csv, json, Excel, PDF, or Word.
+              AI reads it and adds tasks straight to your list, with dates
+              spread out automatically for anything undated.
+            </p>
+            <input
+              type="file"
+              ref={taskFileInputRef}
+              accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+              style={{ display: "none" }}
+              onChange={e => {
+                const file = e.target.files && e.target.files[0];
+                if (file) onImportTasks(file);
+                e.target.value = "";
+              }}
+            />
+            <button className="btn-red add-modal-upload-btn" disabled={importingTasks}
+              onClick={() => taskFileInputRef.current && taskFileInputRef.current.click()}>
+              {importingTasks ? <SpinnerIcon /> : <UploadIcon />}
+              {importingTasks ? "Reading file…" : "Choose file"}
+            </button>
+          </div>
+        )}
+
+        {tab === "summarize" && (
+          <div className="add-modal-file-tab">
+            <p className="add-modal-file-hint">
+              Upload a PDF, Word, or text document — AI writes a clean bullet
+              summary, saved to My Files with an optional read-aloud.
+            </p>
+            <input
+              type="file"
+              ref={sumFileInputRef}
+              accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+              style={{ display: "none" }}
+              onChange={e => {
+                const file = e.target.files && e.target.files[0];
+                if (file) onSummarize(file);
+                e.target.value = "";
+              }}
+            />
+            <button className="btn-red add-modal-upload-btn" disabled={importingSummary}
+              onClick={() => sumFileInputRef.current && sumFileInputRef.current.click()}>
+              {importingSummary ? <SpinnerIcon /> : <UploadIcon />}
+              {importingSummary ? (sumProgress || "Working…") : "Choose file"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -877,15 +965,26 @@ const Avatar = ({ user, size }) => {
   );
 };
 
-const ProfileModal = ({ user, onClose, onToast }) => {
+const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta }) => {
   const [editing, setEditing]   = useState(false);
   const [name, setName]         = useState(user.displayName || "");
   const [saving, setSaving]     = useState(false);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [nickDraft, setNickDraft] = useState(nickname || "");
+  const [dobDraft, setDobDraft]   = useState(dob || "");
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (editing) setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
   }, [editing]);
+
+  useEffect(() => { setNickDraft(nickname || ""); }, [nickname]);
+  useEffect(() => { setDobDraft(dob || ""); }, [dob]);
+
+  const saveMeta = () => {
+    onSaveMeta && onSaveMeta({ nickname: nickDraft.trim(), dob: dobDraft });
+    setEditingMeta(false);
+  };
 
   const provider = user.providerData?.[0]?.providerId === "google.com"
     ? "Google" : "Email & Password";
@@ -974,6 +1073,52 @@ const ProfileModal = ({ user, onClose, onToast }) => {
         </div>
 
         <div className="profile-section">
+          <div className="profile-section-head">
+            <span>Basic information</span>
+            {!editingMeta ? (
+              <button className="profile-edit-btn" title="Edit" onClick={() => setEditingMeta(true)}>
+                <Icon d={ICONS.edit} size={13} />
+              </button>
+            ) : (
+              <div className="profile-meta-actions">
+                <button className="profile-save-btn small" onClick={saveMeta}>Save</button>
+                <button className="profile-cancel-btn" onClick={() => {
+                  setEditingMeta(false); setNickDraft(nickname || ""); setDobDraft(dob || "");
+                }}>
+                  <Icon d={ICONS.close} size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="profile-row">
+            <Icon d={ICONS.user} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">Nickname</span>
+              {editingMeta ? (
+                <input className="profile-meta-input" value={nickDraft} maxLength={24}
+                  placeholder="Add a nickname"
+                  onChange={e => setNickDraft(e.target.value)} />
+              ) : (
+                <span className="profile-row-value">{nickname || "Not set"}</span>
+              )}
+            </div>
+          </div>
+          <div className="profile-row">
+            <Icon d={ICONS.calendar} size={16} />
+            <div className="profile-row-text">
+              <span className="profile-row-label">Date of birth</span>
+              {editingMeta ? (
+                <input type="date" className="profile-meta-input date-inp" value={dobDraft}
+                  onChange={e => setDobDraft(e.target.value)} />
+              ) : (
+                <span className="profile-row-value">{dob || "Not set"}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="profile-section">
           <div className="profile-row">
             <Icon d={ICONS.gear} size={16} />
             <div className="profile-row-text">
@@ -986,6 +1131,265 @@ const ProfileModal = ({ user, onClose, onToast }) => {
         <button className="profile-signout-btn" onClick={() => signOut(auth)}>
           <Icon d={ICONS.logout} size={16} />Sign out
         </button>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════
+// DESKTOP SIDEBAR + TOPBAR + NOTES / MY FILES
+// ═══════════════════════════════════════════════
+const SIDE_NAV_ITEMS = [
+  { id:"dashboard", label:"Dashboard", icon:"dashboard" },
+  { id:"tasks",      label:"Tasks",     icon:"tasks"     },
+  { id:"messages",   label:"Messages",  icon:"message"   },
+  { id:"activity",   label:"Activity",  icon:"stats"     },
+  { id:"calendar",   label:"Calendar",  icon:"calendar"  },
+];
+
+const SCREEN_TITLES = {
+  dashboard: ["Dashboard", "Make things simple."],
+  tasks:     ["Tasks",     "Everything you need to get done."],
+  messages:  ["Messages",  "Ask AI about your day."],
+  activity:  ["Activity",  "Your progress at a glance."],
+  calendar:  ["Calendar",  "Upcoming and overdue reminders."],
+  roadmap:   ["Roadmap",   "Your day-by-day learning plan."],
+};
+
+const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout }) => (
+  <aside className="sidebar">
+    <div className="sidebar-logo">
+      <div className="logo-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M4 12l4 6 4-11 4 11 4-6" stroke="#0a0e1a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div className="logo-name">WORK FLOW</div>
+        <div className="logo-sub">Task Intelligence</div>
+      </div>
+    </div>
+
+    <nav className="sidebar-nav">
+      {SIDE_NAV_ITEMS.map(n => (
+        <button key={n.id}
+          className={"sidebar-nav-btn" + (deskScreen === n.id ? " active" : "")}
+          onClick={() => setDeskScreen(n.id)}>
+          <Icon d={ICONS[n.icon]} size={18} />
+          <span>{n.label}</span>
+        </button>
+      ))}
+    </nav>
+
+    <div className="sidebar-bottom">
+      <button className="sidebar-nav-btn" onClick={onSettings}>
+        <Icon d={ICONS.gear} size={18} /><span>Settings</span>
+      </button>
+      <button className="sidebar-nav-btn logout" onClick={onLogout}>
+        <Icon d={ICONS.logout} size={18} /><span>Log out</span>
+      </button>
+    </div>
+  </aside>
+);
+
+const TopBar = ({ deskScreen, setDeskScreen, upcoming, showNotifPanel, setShowNotifPanel,
+                  user, onProfile }) => {
+  const [title, subtitle] = SCREEN_TITLES[deskScreen] || SCREEN_TITLES.dashboard;
+  const overdueCount = upcoming.filter(isOverdue).length;
+  return (
+    <header className="topbar">
+      <div className="topbar-title-wrap">
+        <div className="topbar-title">{title}</div>
+        <div className="topbar-subtitle">{subtitle}</div>
+      </div>
+      <div className="topbar-right">
+        <button
+          className={"roadmap-btn" + (deskScreen === "roadmap" ? " active" : "")}
+          onClick={() => setDeskScreen(deskScreen === "roadmap" ? "dashboard" : "roadmap")}
+        >
+          <Icon d={ICONS.roadmap} size={15} />
+          {deskScreen === "roadmap" ? "Back to Dashboard" : "Roadmap"}
+        </button>
+
+        <div className="topbar-notif-wrap">
+          <button className="topbar-icon-btn" title="Notifications"
+            onClick={() => setShowNotifPanel(!showNotifPanel)}>
+            <Icon d={ICONS.bell} size={18} />
+            {overdueCount > 0 && <span className="notif-dot" />}
+          </button>
+          {showNotifPanel && (
+            <div className="notif-popover">
+              <div className="notif-popover-head">Reminders</div>
+              {upcoming.length === 0 ? (
+                <div className="empty-small">No timed tasks</div>
+              ) : (
+                <div className="reminder-list">
+                  {upcoming.slice(0, 6).map(t => (
+                    <div key={t.id} className="reminder-item">
+                      <div className="reminder-left">
+                        <span className="reminder-title">
+                          {t.title.length > 28 ? t.title.slice(0, 28) + "…" : t.title}
+                        </span>
+                        {t.dueDate && <span className="reminder-date">📅 {t.dueDate}</span>}
+                      </div>
+                      <div className="reminder-right">
+                        <span className={"reminder-time" + (isOverdue(t) ? " time-overdue" : "")}>
+                          {t.dueTime}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <button className="profile-btn topbar-profile-btn" title="Profile" onClick={onProfile}>
+          <Avatar user={user} size={34} />
+        </button>
+      </div>
+    </header>
+  );
+};
+
+const timeAgo = (ms) => {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + "h ago";
+  return Math.floor(hrs / 24) + "d ago";
+};
+
+const NotesCard = ({ noteText, noteEditing, setNoteEditing, noteDraft, setNoteDraft,
+                     noteSaving, noteUpdatedAt, onSave }) => (
+  <div className="side-card notes-card">
+    <div className="side-card-head">
+      <span>Today's note</span>
+      {!noteEditing && (
+        <button className="side-card-edit-btn" title="Edit note"
+          onClick={() => { setNoteDraft(noteText); setNoteEditing(true); }}>
+          <Icon d={ICONS.edit} size={13} />
+        </button>
+      )}
+    </div>
+
+    {noteEditing ? (
+      <div className="note-edit-box">
+        <textarea
+          className="note-textarea"
+          value={noteDraft}
+          placeholder="Write a quick note for today…"
+          maxLength={280}
+          onChange={e => setNoteDraft(e.target.value)}
+          autoFocus
+        />
+        <div className="note-edit-actions">
+          <button className="profile-save-btn small" disabled={noteSaving}
+            onClick={() => onSave(noteDraft.trim())}>
+            {noteSaving ? "…" : "Save"}
+          </button>
+          <button className="profile-cancel-btn" onClick={() => setNoteEditing(false)}>
+            <Icon d={ICONS.close} size={13} />
+          </button>
+        </div>
+      </div>
+    ) : noteText ? (
+      <>
+        <p className="note-text">{noteText}</p>
+        {noteUpdatedAt && <span className="note-timestamp">{timeAgo(noteUpdatedAt)}</span>}
+      </>
+    ) : (
+      <div className="empty-small">No note yet — tap the pencil to add one</div>
+    )}
+  </div>
+);
+
+const FILE_ICON_BY_EXT = (name) => {
+  const n = (name || "").toLowerCase();
+  if (n.endsWith(".pdf")) return ICONS.pdf;
+  if (n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".csv")) return ICONS.stats;
+  return ICONS.folder;
+};
+
+const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenFile }) => (
+  <div className="side-card files-card">
+    <div className="side-card-head">
+      <span>My files</span>
+      <button className="side-card-add-btn" onClick={onAddFile}>
+        <Icon d={ICONS.add} size={13} />Add file
+      </button>
+    </div>
+
+    {summariesLoading ? (
+      <div className="empty-small">Loading…</div>
+    ) : summaries.length === 0 ? (
+      <div className="empty-small">You have not added any file yet</div>
+    ) : (
+      <div className="files-list">
+        {summaries.slice(0, 5).map(s => (
+          <button key={s.id} className="file-row" onClick={() => onOpenFile(s)}>
+            <span className="file-row-icon"><Icon d={FILE_ICON_BY_EXT(s.sourceFileName)} size={15} /></span>
+            <span className="file-row-info">
+              <span className="file-row-name">{s.title || "Summary"}</span>
+              <span className="file-row-sub">{s.sourceFileName}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+const FileDetailModal = ({ file, onClose, onDelete, speakingId, speechPaused,
+                           onSpeak, onTogglePause, onStop }) => {
+  const isSpeakingThis = speakingId === file.id;
+  return (
+    <div className="add-modal-overlay" onClick={onClose}>
+      <div className="add-modal" onClick={e => e.stopPropagation()}>
+        <div className="add-modal-header">
+          <span className="panel-label red" style={{ marginBottom:0 }}>
+            <div className="panel-dot" />{file.title || "Summary"}
+          </span>
+          <button className="del-btn" onClick={onClose}>
+            <Icon d={ICONS.close} size={18} />
+          </button>
+        </div>
+        <div className="roadmap-item-sub" style={{ marginBottom:10 }}>
+          {file.sourceFileName} · {file.bullets.length} points
+          {file.truncated ? " · long file, summarized from the first part" : ""}
+        </div>
+        <ul className="sum-bullets">
+          {file.bullets.map((b, i) => (
+            <li key={i} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
+          ))}
+        </ul>
+        <div className="sum-voice-row">
+          {!isSpeakingThis ? (
+            <button className="qp-btn sum-voice-btn" onClick={() => onSpeak(file)}>
+              <Icon d={ICONS.speaker} size={14} /> Read aloud
+            </button>
+          ) : (
+            <>
+              <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
+                <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
+                {speechPaused ? " Resume" : " Pause"}
+              </button>
+              <button className="qp-btn sum-voice-btn" onClick={onStop}>
+                <Icon d={ICONS.stop} size={14} /> Stop
+              </button>
+            </>
+          )}
+          <button className="qp-btn sum-voice-btn" onClick={() => { onDelete(file.id); onClose(); }}>
+            <Icon d={ICONS.close} size={14} /> Delete
+          </button>
+        </div>
+        <div className="sum-verify-note">
+          ⚠️ AI-generated summary — double-check against the original file for anything critical.
+        </div>
       </div>
     </div>
   );
@@ -1078,6 +1482,25 @@ function AppInner({ user }) {
   const [showProfile, setShowProfile] = useState(false);
   const [rightTab, setRightTab]       = useState("ai");
 
+  // ── Desktop sidebar navigation (separate from the mobile `screen`
+  // state above, so the mobile bottom-nav experience is untouched)
+  const [deskScreen, setDeskScreen]   = useState("dashboard");
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+  // ── Quick note (top-right "Today note" style card)
+  const [noteText, setNoteText]       = useState("");
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft]     = useState("");
+  const [noteSaving, setNoteSaving]   = useState(false);
+  const [noteUpdatedAt, setNoteUpdatedAt] = useState(null);
+
+  // ── Profile extras not covered by Firebase Auth (nickname / DOB)
+  const [nickname, setNickname]       = useState("");
+  const [dob, setDob]                 = useState("");
+
+  const [openFile, setOpenFile]       = useState(null);
+  const [addModalTab, setAddModalTab] = useState("task");
+
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
   const desktopInpRef  = useRef(null);
@@ -1152,6 +1575,31 @@ function AppInner({ user }) {
         setSummariesLoading(false);
       }
     );
+    return () => unsub();
+  }, [user]);
+
+  // Note sync — single small doc, real-time so it shows on every device.
+  useEffect(() => {
+    if (!user) return;
+    const noteRef = doc(db, "users", user.uid, "meta", "note");
+    const unsub = onSnapshot(noteRef, (snap) => {
+      const data = snap.data();
+      setNoteText(data?.text || "");
+      setNoteUpdatedAt(data?.updatedAt || null);
+    }, () => {});
+    return () => unsub();
+  }, [user]);
+
+  // Profile-meta sync — nickname / date of birth (Firebase Auth has
+  // no fields for these, so they live in their own small doc).
+  useEffect(() => {
+    if (!user) return;
+    const metaRef = doc(db, "users", user.uid, "meta", "profile");
+    const unsub = onSnapshot(metaRef, (snap) => {
+      const data = snap.data();
+      setNickname(data?.nickname || "");
+      setDob(data?.dob || "");
+    }, () => {});
     return () => unsub();
   }, [user]);
 
@@ -1308,6 +1756,32 @@ function AppInner({ user }) {
     setRepeatDays([]);
     setShowAdd(false);
   }
+
+  const saveNote = useCallback(async (text) => {
+    if (!user) return;
+    setNoteSaving(true);
+    try {
+      await setDoc(doc(db, "users", user.uid, "meta", "note"),
+        { text, updatedAt: Date.now() }, { merge: true });
+      flashSaved();
+    } catch (e) {
+      showToast("⚠️ Couldn't save note — check connection");
+    } finally {
+      setNoteSaving(false);
+      setNoteEditing(false);
+    }
+  }, [user, flashSaved]);
+
+  const saveProfileMeta = useCallback(async (fields) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "users", user.uid, "meta", "profile"),
+        { ...fields, updatedAt: Date.now() }, { merge: true });
+      showToast("Profile updated");
+    } catch (e) {
+      showToast("⚠️ Couldn't update profile — check connection");
+    }
+  }, [user]);
 
   const toggleTask = useCallback(async (id) => {
     if (!user) return;
@@ -2155,6 +2629,8 @@ function AppInner({ user }) {
     onStop: stopSpeech,
   };
 
+  const openAddModal = (tab) => { setAddModalTab(tab || "task"); setShowAdd(true); };
+
   return (
     <div className="dharani-root">
       <div className="bg-ambience">
@@ -2163,15 +2639,26 @@ function AppInner({ user }) {
       </div>
 
       {showAdd && (
-        <AddModal {...formProps} onClose={() => setShowAdd(false)} />
+        <AddModal {...formProps} onClose={() => setShowAdd(false)} initialTab={addModalTab}
+          onImportTasks={importTasksFromFile} importingTasks={importing} taskFileInputRef={fileInputRef}
+          onSummarize={summarizeFileFromFile} importingSummary={sumImporting}
+          sumProgress={sumProgress} sumFileInputRef={sumFileInputRef}
+        />
       )}
 
       {showProfile && (
-        <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast} />
+        <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast}
+          nickname={nickname} dob={dob} onSaveMeta={saveProfileMeta} />
       )}
 
-      <div className="wrap">
-        {/* Header */}
+      {openFile && (
+        <FileDetailModal file={openFile} onClose={() => setOpenFile(null)}
+          onDelete={deleteSummary} speakingId={speakingId} speechPaused={speechPaused}
+          onSpeak={speakSummary} onTogglePause={togglePauseSpeech} onStop={stopSpeech} />
+      )}
+
+      {/* ── MOBILE header (unchanged experience on phones) ── */}
+      <div className="wrap mobile-only-wrap">
         <header className="header">
           <div className="logo">
             <div className="logo-mark">
@@ -2198,56 +2685,7 @@ function AppInner({ user }) {
           </div>
         </header>
 
-        {/* Desktop */}
-        <div className="desktop-layout">
-          <div className="left-col">
-            <div className="card-red">
-              <AddForm {...formProps} inputRef={desktopInpRef} />
-            </div>
-            <FilterTabs tab={tab} setTab={setTab} />
-            <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
-          </div>
-          <div className="right-col">
-            <div className="right-tabs">
-              {[
-                { id:"ai",        label:"AI",       icon:"ai"      },
-                { id:"roadmap",   label:"Roadmap",  icon:"roadmap" },
-                { id:"summary",   label:"Docs",     icon:"summary" },
-                { id:"reminders", label:"Reminders",icon:"bell"    },
-                { id:"stats",     label:"Stats",    icon:"stats"   },
-              ].map(t => (
-                <button key={t.id}
-                  className={"right-tab-btn" + (rightTab === t.id ? " right-tab-active" : "")}
-                  onClick={() => setRightTab(t.id)}>
-                  <Icon d={ICONS[t.icon]} size={16} />{t.label}
-                </button>
-              ))}
-            </div>
-            {rightTab === "ai" && (
-              <AIPanel
-                aiMessages={aiMessages} aiLoading={aiLoading}
-                aiInput={aiInput} setAiInput={setAiInput}
-                onAsk={askAI} chatRef={chatRef}
-                onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
-              />
-            )}
-            {rightTab === "roadmap" && <RoadmapPanel {...roadmapProps} />}
-            {rightTab === "summary" && <SummaryPanel {...summaryProps} />}
-            {rightTab === "reminders" && (
-              <RemindersPanel
-                upcoming={upcoming}
-                notifStatus={notifStatus}
-                onRequestNotif={requestNotifPermission}
-              />
-            )}
-            {rightTab === "stats" && (
-              <StatsPanel total={total} done={done} pending={pending}
-                highCount={highCount} pct={pct} />
-            )}
-          </div>
-        </div>
-
-        {/* Mobile */}
+        {/* Mobile screens (all existing behaviour, untouched) */}
         <div className="mobile-layout">
           {screen === "tasks" && (
             <>
@@ -2284,6 +2722,96 @@ function AppInner({ user }) {
       </div>
 
       <BottomNav screen={screen} setScreen={setScreen} onAdd={() => setShowAdd(true)} />
+
+      {/* ── DESKTOP app shell: sidebar + topbar + content ── */}
+      <div className="app-shell">
+        <Sidebar
+          deskScreen={deskScreen} setDeskScreen={setDeskScreen}
+          onSettings={() => setShowProfile(true)}
+          onLogout={() => signOut(auth)}
+        />
+
+        <div className="main-area">
+          <TopBar
+            deskScreen={deskScreen} setDeskScreen={setDeskScreen}
+            upcoming={upcoming}
+            showNotifPanel={showNotifPanel} setShowNotifPanel={setShowNotifPanel}
+            user={user} onProfile={() => setShowProfile(true)}
+          />
+
+          {deskScreen === "dashboard" && (
+            <div className="dashboard-grid">
+              <div className="dashboard-center">
+                <div className="dashboard-center-head">
+                  <FilterTabs tab={tab} setTab={setTab} />
+                  <button className="btn-red new-task-btn" onClick={() => openAddModal("task")}>
+                    <Icon d={ICONS.add} size={15} />New task
+                  </button>
+                </div>
+                <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
+              </div>
+              <div className="dashboard-side">
+                <NotesCard
+                  noteText={noteText} noteEditing={noteEditing} setNoteEditing={setNoteEditing}
+                  noteDraft={noteDraft} setNoteDraft={setNoteDraft} noteSaving={noteSaving}
+                  noteUpdatedAt={noteUpdatedAt} onSave={saveNote}
+                />
+                <MyFilesCard
+                  summaries={summaries} summariesLoading={summariesLoading}
+                  onAddFile={() => openAddModal("summarize")}
+                  onOpenFile={setOpenFile}
+                />
+              </div>
+            </div>
+          )}
+
+          {deskScreen === "tasks" && (
+            <div className="tasks-screen">
+              <div className="dashboard-center-head">
+                <FilterTabs tab={tab} setTab={setTab} />
+                <button className="btn-red new-task-btn" onClick={() => openAddModal("task")}>
+                  <Icon d={ICONS.add} size={15} />New task
+                </button>
+              </div>
+              <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
+            </div>
+          )}
+
+          {deskScreen === "messages" && (
+            <div className="single-screen">
+              <AIPanel
+                aiMessages={aiMessages} aiLoading={aiLoading}
+                aiInput={aiInput} setAiInput={setAiInput}
+                onAsk={askAI} chatRef={chatRef}
+                onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
+              />
+            </div>
+          )}
+
+          {deskScreen === "activity" && (
+            <div className="single-screen">
+              <StatsPanel total={total} done={done} pending={pending}
+                highCount={highCount} pct={pct} />
+            </div>
+          )}
+
+          {deskScreen === "calendar" && (
+            <div className="single-screen">
+              <RemindersPanel
+                upcoming={upcoming}
+                notifStatus={notifStatus}
+                onRequestNotif={requestNotifPermission}
+              />
+            </div>
+          )}
+
+          {deskScreen === "roadmap" && (
+            <div className="single-screen">
+              <RoadmapPanel {...roadmapProps} />
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className={"toast " + (toast.visible ? "visible" : "hidden")}>
         {toast.msg}
