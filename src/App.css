@@ -490,6 +490,19 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 .dot1{animation:dot-bounce 1.2s infinite 0s;}
 .dot2{animation:dot-bounce 1.2s infinite .2s;}
 .dot3{animation:dot-bounce 1.2s infinite .4s;}
+/* ── Chat: attach button, file chip, inline summary bubble ── */
+.chat-attach-btn{
+  width:38px;height:38px;border-radius:10px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--wf-accent-soft);border:1px solid var(--wf-accent-border);
+  color:var(--wf-accent-2);cursor:pointer;transition:all .15s;
+}
+.chat-attach-btn:hover{background:rgba(79,124,255,.22);color:#fff;}
+.chat-attach-btn:disabled{opacity:.6;cursor:default;}
+.chat-file-chip{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;}
+.chat-summary-bubble{max-width:96%;}
+.chat-summary-title{font-size:13px;font-weight:600;color:#fff;}
+.chat-loading-label{font-size:10px;color:#4f7cff;margin-left:8px;font-family:'JetBrains Mono',monospace;}
 .quick-prompts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
 .qp-btn{font-size:9px;color:#2e2e2e;background:rgba(var(--wf-ovl),.03);
   border:1px solid rgba(var(--wf-ovl),.06);border-radius:99px;

@@ -142,6 +142,7 @@ function SafeMessage({ text }) {
 const ICONS = {
   tasks: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
   ai:    "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z",
+  attach:"M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.2 9.19a1.5 1.5 0 01-2.12-2.12l8.49-8.48",
   bell:  "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
   stats: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
   roadmap: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
@@ -172,7 +173,7 @@ const ICONS = {
   moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
 };
 
-const APP_VERSION = "12.2.0";
+const APP_VERSION = "12.3.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -368,26 +369,101 @@ const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
   </div>
 );
 
-const AIPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
-                   onImportFile, importing, fileInputRef }) => (
+// ─── CHAT PANEL ─────────────────────────────────────────────
+// Unified Claude-style chat: ask AI questions, or attach a document
+// (📎) to get a bullet summary posted right into the thread — same
+// place, same input, same history. Replaces the old separate
+// "AI Intel" chat and "Summarize" panel.
+const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
+                     onImportFile, importing, fileInputRef,
+                     onAttachFile, attaching, attachProgress, attachFileInputRef,
+                     speakingId, speechPaused, onSpeak, onTogglePause, onStop }) => (
   <div className="card-red">
     <div className="panel-label red">
-      <div className="panel-dot" />AI Intel
+      <div className="panel-dot" />Chat
     </div>
     <div className="ai-chat" ref={chatRef}>
-      {aiMessages.map((m, i) => (
-        <div key={i} className={m.role === "ai" ? "ai-bubble" : "user-bubble"}>
-          <SafeMessage text={m.text} />
-        </div>
-      ))}
-      {(aiLoading || importing) && (
+      {aiMessages.map((m, i) => {
+        if (m.type === "file") {
+          return (
+            <div key={i} className="user-bubble chat-file-chip">
+              <Icon d={FILE_ICON_BY_EXT(m.fileName)} size={14} />
+              <span>{m.fileName}</span>
+            </div>
+          );
+        }
+        if (m.type === "summary") {
+          const isSpeakingThis = speakingId === m.summaryId;
+          return (
+            <div key={i} className="ai-bubble chat-summary-bubble">
+              <div className="chat-summary-title">{m.title}</div>
+              <div className="roadmap-item-sub" style={{ margin:"2px 0 8px" }}>
+                {m.sourceFileName} · {m.bullets.length} points
+                {m.truncated ? " · long file, summarized from the first part" : ""}
+              </div>
+              <ul className="sum-bullets">
+                {m.bullets.map((b, bi) => (
+                  <li key={bi} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
+                ))}
+              </ul>
+              <div className="sum-voice-row">
+                {!isSpeakingThis ? (
+                  <button className="qp-btn sum-voice-btn" onClick={() => onSpeak({ id:m.summaryId, title:m.title, bullets:m.bullets })}>
+                    <Icon d={ICONS.speaker} size={14} /> Read aloud
+                  </button>
+                ) : (
+                  <>
+                    <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
+                      <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
+                      {speechPaused ? " Resume" : " Pause"}
+                    </button>
+                    <button className="qp-btn sum-voice-btn" onClick={onStop}>
+                      <Icon d={ICONS.stop} size={14} /> Stop
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="sum-verify-note">
+                ⚠️ AI-generated summary — double-check against the original file for anything critical.
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className={m.role === "ai" ? "ai-bubble" : "user-bubble"}>
+            <SafeMessage text={m.text} />
+          </div>
+        );
+      })}
+      {(aiLoading || importing || attaching) && (
         <div className="ai-bubble">
           <span className="dot1" /><span className="dot2" /><span className="dot3" />
+          {attaching && attachProgress && <span className="chat-loading-label">{attachProgress}</span>}
         </div>
       )}
     </div>
     <div className="ai-input-row">
-      <input className="input-dark" placeholder="Ask AI..."
+      <input
+        type="file"
+        ref={attachFileInputRef}
+        accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+        style={{ display: "none" }}
+        onChange={e => {
+          const file = e.target.files && e.target.files[0];
+          if (file) onAttachFile(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        className="chat-attach-btn"
+        title={attaching ? (attachProgress || "Working…") : "Attach a document to summarize"}
+        aria-label="Attach document"
+        disabled={attaching}
+        onClick={() => attachFileInputRef.current && attachFileInputRef.current.click()}
+      >
+        {attaching ? <SpinnerIcon /> : <Icon d={ICONS.attach} size={17} />}
+      </button>
+      <input className="input-dark" placeholder="Ask AI, or attach a file to summarize…"
         value={aiInput}
         onChange={e => setAiInput(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") onAsk(); }}
@@ -790,113 +866,11 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
   );
 };
 
-// ─── SUMMARY PANEL ──────────────────────────────────────────
-// Upload a PDF / Word / text file → clean AI bullet summary,
-// with an optional "Read aloud" voice mode (Web Speech API).
-const SummaryPanel = ({ summaries, summariesLoading, importing, sumProgress, fileInputRef,
-                        speakingId, speechPaused,
-                        onImportFile, onDelete, onSpeak, onTogglePause, onStop }) => {
-  const [expandedId, setExpandedId] = useState(null);
-
-  return (
-    <div className="card-dark">
-      <div className="panel-label gray">
-        📄 Summarize
-        <span className="panel-hint">upload a file → bullet summary → read aloud</span>
-      </div>
-
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
-        style={{ display: "none" }}
-        onChange={e => {
-          const file = e.target.files && e.target.files[0];
-          if (file) onImportFile(file);
-          e.target.value = "";
-        }}
-      />
-      <button
-        className="icon-upload-btn"
-        title={importing ? (sumProgress || "Working…") : "Upload a PDF / Word / text file to summarize"}
-        aria-label="Upload document to summarize"
-        disabled={importing}
-        onClick={() => fileInputRef.current && fileInputRef.current.click()}
-      >
-        {importing ? <SpinnerIcon /> : <UploadIcon />}
-      </button>
-
-      {summariesLoading ? (
-        <div className="empty-small">Loading…</div>
-      ) : summaries.length === 0 ? (
-        <div className="empty-small">No summaries yet — upload a file above</div>
-      ) : (
-        <div className="roadmap-list">
-          {summaries.map(s => {
-            const isOpen = expandedId === s.id;
-            const isSpeakingThis = speakingId === s.id;
-            return (
-              <div key={s.id} className="roadmap-item">
-                <div className="roadmap-item-head" onClick={() => setExpandedId(isOpen ? null : s.id)}>
-                  <div className="roadmap-item-title">{s.title || "Summary"}</div>
-                  <button
-                    className="del-btn"
-                    onClick={e => { e.stopPropagation(); onDelete(s.id); }}
-                  >
-                    <Icon d={ICONS.close} size={14} />
-                  </button>
-                </div>
-                <div className="roadmap-item-sub">
-                  {s.sourceFileName} · {s.bullets.length} points
-                  {s.truncated ? " · long file, summarized from the first part" : ""}
-                </div>
-
-                {isOpen && (
-                  <>
-                    <ul className="sum-bullets">
-                      {s.bullets.map((b, i) => (
-                        <li key={i} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
-                      ))}
-                    </ul>
-
-                    <div className="sum-voice-row">
-                      {!isSpeakingThis ? (
-                        <button className="qp-btn sum-voice-btn" onClick={() => onSpeak(s)}>
-                          <Icon d={ICONS.speaker} size={14} /> Read aloud
-                        </button>
-                      ) : (
-                        <>
-                          <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
-                            <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
-                            {speechPaused ? " Resume" : " Pause"}
-                          </button>
-                          <button className="qp-btn sum-voice-btn" onClick={onStop}>
-                            <Icon d={ICONS.stop} size={14} /> Stop
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="sum-verify-note">
-                      ⚠️ AI-generated summary — double-check against the original file for anything critical.
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
 const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
                     dueDate, setDueDate, dueTime, setDueTime,
                     repeat, setRepeat, repeatDays, setRepeatDays,
                     onAdd, pct, done, total,
                     onImportTasks, importingTasks, taskFileInputRef,
-                    onSummarize, importingSummary, sumProgress, sumFileInputRef,
                     initialTab }) => {
   const ref = useRef(null);
   const [tab, setTab] = useState(initialTab || "task");
@@ -926,10 +900,6 @@ const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
           <button className={"add-modal-tab" + (tab === "import" ? " active" : "")}
             onClick={() => setTab("import")}>
             <Icon d={ICONS.ai} size={14} />Auto-add
-          </button>
-          <button className={"add-modal-tab" + (tab === "summarize" ? " active" : "")}
-            onClick={() => setTab("summarize")}>
-            <Icon d={ICONS.summary} size={14} />Summarize
           </button>
         </div>
 
@@ -968,31 +938,6 @@ const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
               onClick={() => taskFileInputRef.current && taskFileInputRef.current.click()}>
               {importingTasks ? <SpinnerIcon /> : <UploadIcon />}
               {importingTasks ? "Reading file…" : "Choose file"}
-            </button>
-          </div>
-        )}
-
-        {tab === "summarize" && (
-          <div className="add-modal-file-tab">
-            <p className="add-modal-file-hint">
-              Upload a PDF, Word, or text document — AI writes a clean bullet
-              summary, saved to My Files with an optional read-aloud.
-            </p>
-            <input
-              type="file"
-              ref={sumFileInputRef}
-              accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
-              style={{ display: "none" }}
-              onChange={e => {
-                const file = e.target.files && e.target.files[0];
-                if (file) onSummarize(file);
-                e.target.value = "";
-              }}
-            />
-            <button className="btn-red add-modal-upload-btn" disabled={importingSummary}
-              onClick={() => sumFileInputRef.current && sumFileInputRef.current.click()}>
-              {importingSummary ? <SpinnerIcon /> : <UploadIcon />}
-              {importingSummary ? (sumProgress || "Working…") : "Choose file"}
             </button>
           </div>
         )}
@@ -1291,7 +1236,7 @@ const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photo
 const SIDE_NAV_ITEMS = [
   { id:"dashboard", label:"Dashboard", icon:"dashboard" },
   { id:"tasks",      label:"Tasks",     icon:"tasks"     },
-  { id:"messages",   label:"Messages",  icon:"message"   },
+  { id:"messages",   label:"Chat",      icon:"message"   },
   { id:"activity",   label:"Activity",  icon:"stats"     },
   { id:"calendar",   label:"Calendar",  icon:"calendar"  },
 ];
@@ -1299,7 +1244,7 @@ const SIDE_NAV_ITEMS = [
 const SCREEN_TITLES = {
   dashboard: ["Dashboard", "Make things simple."],
   tasks:     ["Tasks",     "Everything you need to get done."],
-  messages:  ["Messages",  "Ask AI about your day."],
+  messages:  ["Chat",  "Ask AI about your day, or attach a file to summarize."],
   activity:  ["Activity",  "Your progress at a glance."],
   calendar:  ["Calendar",  "Upcoming and overdue reminders."],
   roadmap:   ["Roadmap",   "Your day-by-day learning plan."],
@@ -1546,9 +1491,8 @@ const FileDetailModal = ({ file, onClose, onDelete, speakingId, speechPaused,
 
 const NAV_ITEMS = [
   { id:"tasks",     label:"Tasks"  },
-  { id:"ai",        label:"AI"     },
+  { id:"ai",        label:"Chat"   },
   { id:"roadmap",   label:"Road"   },
-  { id:"summary",   label:"Docs"   },
   { id:"reminders", label:"Remind" },
   { id:"stats",     label:"Stats"  },
 ];
@@ -1662,7 +1606,7 @@ function AppInner({ user }) {
   const desktopInpRef  = useRef(null);
   const fileInputRef   = useRef(null);
   const rmFileInputRef = useRef(null);
-  const sumFileInputRef = useRef(null);
+  const sumFileInputRef = useRef(null); // now used as the Chat panel's attach-file input
 
   // Clock
   useEffect(() => {
@@ -2257,20 +2201,24 @@ function AppInner({ user }) {
     setImporting(false);
   }
 
-  // Upload any supported document (PDF, Word, txt/md/csv/json, Excel) and
-  // get back a clean, short bullet-point summary — plus a "Read aloud"
-  // voice mode so it can be listened to instead of read. One single Groq
-  // call per file, kept small (max_tokens 500) since only a summary comes
-  // back, not the whole document.
+  // Attach a document (📎) straight into the Chat thread: reads it, gets a
+  // clean bullet-point summary from Groq, posts a "you attached X" chip
+  // followed by an AI summary bubble (with read-aloud) into aiMessages —
+  // and still saves to Firestore `summaries` so My Files keeps working.
+  // One single Groq call per file, kept small (max_tokens 500) since only
+  // a summary comes back, not the whole document.
   async function summarizeFileFromFile(file) {
     if (!user || sumImporting) return;
+    setAiMessages(prev => [...prev, { role: "user", type: "file", fileName: file.name }]);
     setSumImporting(true);
     setSumProgress("Reading file…");
     try {
       const rawText = await extractTextFromFile(file);
       const cleaned = (rawText || "").replace(/\s+/g, " ").trim();
       if (!cleaned) {
-        showToast("⚠️ Couldn't find any readable text in that file");
+        const msg = "⚠️ Couldn't find any readable text in that file";
+        showToast(msg);
+        setAiMessages(prev => [...prev, { role: "ai", text: msg }]);
         setSumImporting(false);
         setSumProgress("");
         return;
@@ -2280,7 +2228,9 @@ function AppInner({ user }) {
 
       const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
       if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+        const msg = "⚠️ Groq API key not set! Open .env and add: REACT_APP_GROQ_API_KEY=gsk_...";
         showToast("⚠️ Groq API key not set — can't summarize the file");
+        setAiMessages(prev => [...prev, { role: "ai", text: msg }]);
         setSumImporting(false);
         setSumProgress("");
         return;
@@ -2313,7 +2263,9 @@ function AppInner({ user }) {
 
       const d = await r.json();
       if (d.error) {
-        showToast("⚠️ Groq error: " + d.error.message);
+        const msg = "⚠️ Groq error: " + d.error.message;
+        showToast(msg);
+        setAiMessages(prev => [...prev, { role: "ai", text: msg }]);
         setSumImporting(false);
         setSumProgress("");
         return;
@@ -2329,7 +2281,9 @@ function AppInner({ user }) {
         : [];
 
       if (bullets.length === 0) {
-        showToast("⚠️ Couldn't summarize that file — try a different one");
+        const msg = "⚠️ Couldn't summarize that file — try a different one";
+        showToast(msg);
+        setAiMessages(prev => [...prev, { role: "ai", text: msg }]);
         setSumImporting(false);
         setSumProgress("");
         return;
@@ -2345,9 +2299,15 @@ function AppInner({ user }) {
       };
       await setDoc(doc(db, "users", user.uid, "summaries", id), summaryDoc);
       flashSaved();
-      showToast("✅ Summarized \"" + file.name + "\" into " + bullets.length + " points");
+      setAiMessages(prev => [...prev, {
+        role: "ai", type: "summary",
+        summaryId: id, title, bullets,
+        sourceFileName: file.name, truncated: wasTruncated,
+      }]);
     } catch (err) {
-      showToast("⚠️ Couldn't read that file: " + err.message);
+      const msg = "⚠️ Couldn't read that file: " + err.message;
+      showToast(msg);
+      setAiMessages(prev => [...prev, { role: "ai", text: msg }]);
     }
     setSumProgress("");
     setSumImporting(false);
@@ -2791,18 +2751,25 @@ function AppInner({ user }) {
     onUnlockNextPage: unlockNextRoadmapPage,
   };
 
-  const summaryProps = {
-    summaries, summariesLoading,
-    importing: sumImporting, sumProgress, fileInputRef: sumFileInputRef,
-    speakingId, speechPaused,
-    onImportFile: summarizeFileFromFile,
-    onDelete: deleteSummary,
-    onSpeak: speakSummary,
-    onTogglePause: togglePauseSpeech,
-    onStop: stopSpeech,
+  const chatProps = {
+    aiMessages, aiLoading, aiInput, setAiInput, onAsk: askAI, chatRef,
+    onImportFile: importTasksFromFile, importing, fileInputRef,
+    onAttachFile: summarizeFileFromFile, attaching: sumImporting, attachProgress: sumProgress,
+    attachFileInputRef: sumFileInputRef,
+    speakingId, speechPaused, onSpeak: speakSummary,
+    onTogglePause: togglePauseSpeech, onStop: stopSpeech,
   };
 
   const openAddModal = (tab) => { setAddModalTab(tab || "task"); setShowAdd(true); };
+
+  // "Add file" on the My Files card now jumps straight into Chat and pops
+  // the attach picker, instead of opening the old separate Summarize tab.
+  const openChatToAttach = (goDesktop) => {
+    if (goDesktop) setDeskScreen("messages"); else setScreen("ai");
+    setTimeout(() => {
+      if (sumFileInputRef.current) sumFileInputRef.current.click();
+    }, 150);
+  };
 
   return (
     <div className="dharani-root" data-theme={theme}>
@@ -2814,8 +2781,6 @@ function AppInner({ user }) {
       {showAdd && (
         <AddModal {...formProps} onClose={() => setShowAdd(false)} initialTab={addModalTab}
           onImportTasks={importTasksFromFile} importingTasks={importing} taskFileInputRef={fileInputRef}
-          onSummarize={summarizeFileFromFile} importingSummary={sumImporting}
-          sumProgress={sumProgress} sumFileInputRef={sumFileInputRef}
         />
       )}
 
@@ -2873,18 +2838,10 @@ function AppInner({ user }) {
             </>
           )}
           {screen === "ai" && (
-            <AIPanel
-              aiMessages={aiMessages} aiLoading={aiLoading}
-              aiInput={aiInput} setAiInput={setAiInput}
-              onAsk={askAI} chatRef={chatRef}
-              onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
-            />
+            <ChatPanel {...chatProps} />
           )}
           {screen === "roadmap" && (
             <RoadmapPanel {...roadmapProps} />
-          )}
-          {screen === "summary" && (
-            <SummaryPanel {...summaryProps} />
           )}
           {screen === "reminders" && (
             <RemindersPanel
@@ -2942,7 +2899,7 @@ function AppInner({ user }) {
                 />
                 <MyFilesCard
                   summaries={summaries} summariesLoading={summariesLoading}
-                  onAddFile={() => openAddModal("summarize")}
+                  onAddFile={() => openChatToAttach(true)}
                   onOpenFile={setOpenFile}
                 />
               </div>
@@ -2963,12 +2920,7 @@ function AppInner({ user }) {
 
           {deskScreen === "messages" && (
             <div className="single-screen">
-              <AIPanel
-                aiMessages={aiMessages} aiLoading={aiLoading}
-                aiInput={aiInput} setAiInput={setAiInput}
-                onAsk={askAI} chatRef={chatRef}
-                onImportFile={importTasksFromFile} importing={importing} fileInputRef={fileInputRef}
-              />
+              <ChatPanel {...chatProps} />
             </div>
           )}
 
