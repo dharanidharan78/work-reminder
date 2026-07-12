@@ -47,6 +47,89 @@ function friendlyError(code) {
   }
 }
 
+/* ─────────────────────────────────────────────────────────
+   Password security: complexity rule + 5-attempt lockout.
+   Complexity: min 6 chars, at least 1 number, at least 1
+   special character.
+   Lockout: 5 wrong attempts for the same email locks that
+   email out for 1 hour. Tracked client-side in localStorage
+   (keyed by email) since Firebase already rate-limits the
+   backend — this is the friendlier, user-visible layer on
+   top of that.
+───────────────────────────────────────────────────────── */
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 60 * 60 * 1000; // 1 hour
+const ATTEMPTS_KEY = "wf_login_attempts";
+
+function isStrongPassword(pw) {
+  return (
+    pw.length >= 6 &&
+    /[0-9]/.test(pw) &&
+    /[^A-Za-z0-9]/.test(pw)
+  );
+}
+
+function passwordHint() {
+  return "Min 6 characters, with at least 1 number and 1 special character.";
+}
+
+function readAttemptsStore() {
+  try {
+    return JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || "{}");
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeAttemptsStore(store) {
+  try {
+    localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(store));
+  } catch (_) {}
+}
+
+// Returns { locked, remainingMs, attemptsLeft } for an email
+function getLockState(email) {
+  const store = readAttemptsStore();
+  const rec = store[email.toLowerCase()];
+  if (!rec) return { locked: false, remainingMs: 0, attemptsLeft: MAX_ATTEMPTS };
+  if (rec.lockedUntil && rec.lockedUntil > Date.now()) {
+    return { locked: true, remainingMs: rec.lockedUntil - Date.now(), attemptsLeft: 0 };
+  }
+  if (rec.lockedUntil && rec.lockedUntil <= Date.now()) {
+    const store2 = readAttemptsStore();
+    delete store2[email.toLowerCase()];
+    writeAttemptsStore(store2);
+    return { locked: false, remainingMs: 0, attemptsLeft: MAX_ATTEMPTS };
+  }
+  return { locked: false, remainingMs: 0, attemptsLeft: Math.max(0, MAX_ATTEMPTS - (rec.count || 0)) };
+}
+
+function recordFailedAttempt(email) {
+  const key = email.toLowerCase();
+  const store = readAttemptsStore();
+  const rec = store[key] || { count: 0, lockedUntil: 0 };
+  rec.count = (rec.count || 0) + 1;
+  if (rec.count >= MAX_ATTEMPTS) {
+    rec.lockedUntil = Date.now() + LOCKOUT_MS;
+  }
+  store[key] = rec;
+  writeAttemptsStore(store);
+  return getLockState(email);
+}
+
+function clearAttempts(email) {
+  const store = readAttemptsStore();
+  delete store[email.toLowerCase()];
+  writeAttemptsStore(store);
+}
+
+function fmtRemaining(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18">
     <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z" />
@@ -149,11 +232,12 @@ function ForgotPassword({ onBack, prefillEmail }) {
   async function handleSetNewPassword(e) {
     e.preventDefault();
     setError("");
-    if (newPassword.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (!isStrongPassword(newPassword)) { setError(`Password too weak. ${passwordHint()}`); return; }
     if (newPassword !== newPassword2) { setError("Passwords don't match."); return; }
     setLoading(true);
     try {
       await updatePassword(auth.currentUser, newPassword);
+      clearAttempts(prefillEmail || auth.currentUser?.email || "");
       setResetDone(true);
     } catch (err) {
       setError(friendlyError(err.code));
@@ -265,7 +349,7 @@ function ForgotPassword({ onBack, prefillEmail }) {
           <input
             type="password"
             className="input-dark"
-            placeholder="New password (min 6 characters)"
+            placeholder="New password (6+ chars, 1 number, 1 special char)"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             autoComplete="new-password"
@@ -278,6 +362,7 @@ function ForgotPassword({ onBack, prefillEmail }) {
             onChange={(e) => setNewPassword2(e.target.value)}
             autoComplete="new-password"
           />
+          <div className="auth-pw-hint">{passwordHint()}</div>
           {error && <div className="login-error">{error}</div>}
           <button className="btn-red auth-submit" type="submit" disabled={loading}>
             {loading ? "Saving…" : "Set new password"}
@@ -399,6 +484,20 @@ export default function Login({ onBackToLanding }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [lockInfo, setLockInfo] = useState({ locked: false, remainingMs: 0, attemptsLeft: MAX_ATTEMPTS });
+
+  // Live countdown while locked out, re-checked against the email
+  // currently typed in the sign-in form.
+  useEffect(() => {
+    if (view !== "signin" || !email.trim()) {
+      setLockInfo({ locked: false, remainingMs: 0, attemptsLeft: MAX_ATTEMPTS });
+      return;
+    }
+    const check = () => setLockInfo(getLockState(email.trim()));
+    check();
+    const id = setInterval(check, 1000);
+    return () => clearInterval(id);
+  }, [email, view]);
 
   async function handleGoogle() {
     setError("");
@@ -418,8 +517,18 @@ export default function Login({ onBackToLanding }) {
       setError("Enter both email and password.");
       return;
     }
-    if (view === "signup" && password.length < 6) {
-      setError("Password must be at least 6 characters.");
+
+    if (view === "signin") {
+      const lock = getLockState(email.trim());
+      if (lock.locked) {
+        setLockInfo(lock);
+        setError(`Too many wrong attempts. Try again in ${fmtRemaining(lock.remainingMs)}.`);
+        return;
+      }
+    }
+
+    if (view === "signup" && !isStrongPassword(password)) {
+      setError(`Password too weak. ${passwordHint()}`);
       return;
     }
     if (view === "signup" && password !== password2) {
@@ -430,6 +539,8 @@ export default function Login({ onBackToLanding }) {
     try {
       if (view === "signin") {
         await signInWithEmailAndPassword(auth, email.trim(), password);
+        clearAttempts(email.trim());
+        setLockInfo({ locked: false, remainingMs: 0, attemptsLeft: MAX_ATTEMPTS });
       } else {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         if (name.trim()) {
@@ -438,7 +549,20 @@ export default function Login({ onBackToLanding }) {
         setView("linkPhone");
       }
     } catch (err) {
-      setError(friendlyError(err.code));
+      if (
+        view === "signin" &&
+        ["auth/wrong-password", "auth/invalid-credential", "auth/user-not-found"].includes(err.code)
+      ) {
+        const lock = recordFailedAttempt(email.trim());
+        setLockInfo(lock);
+        if (lock.locked) {
+          setError(`Too many wrong attempts. Locked for 1 hour — try again in ${fmtRemaining(lock.remainingMs)}.`);
+        } else {
+          setError(`${friendlyError(err.code)} (${lock.attemptsLeft} attempt${lock.attemptsLeft === 1 ? "" : "s"} left)`);
+        }
+      } else {
+        setError(friendlyError(err.code));
+      }
     }
     setLoading(false);
   }
@@ -550,20 +674,28 @@ export default function Login({ onBackToLanding }) {
         <input
           type="password"
           className="input-dark"
-          placeholder="Password (min 6 characters)"
+          placeholder={
+            view === "signup"
+              ? "Password (6+ chars, 1 number, 1 special char)"
+              : "Password"
+          }
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={view === "signin" ? "current-password" : "new-password"}
+          disabled={lockInfo.locked}
         />
         {view === "signup" && (
-          <input
-            type="password"
-            className="input-dark"
-            placeholder="Confirm password"
-            value={password2}
-            onChange={(e) => setPassword2(e.target.value)}
-            autoComplete="new-password"
-          />
+          <>
+            <input
+              type="password"
+              className="input-dark"
+              placeholder="Confirm password"
+              value={password2}
+              onChange={(e) => setPassword2(e.target.value)}
+              autoComplete="new-password"
+            />
+            <div className="auth-pw-hint">{passwordHint()}</div>
+          </>
         )}
 
         {view === "signin" && (
@@ -576,11 +708,25 @@ export default function Login({ onBackToLanding }) {
           </button>
         )}
 
+        {view === "signin" && !lockInfo.locked && lockInfo.attemptsLeft < MAX_ATTEMPTS && !error && (
+          <div className="auth-attempts-warn">
+            {lockInfo.attemptsLeft} attempt{lockInfo.attemptsLeft === 1 ? "" : "s"} left before this account is locked for 1 hour.
+          </div>
+        )}
+
+        {view === "signin" && lockInfo.locked && (
+          <div className="auth-lockout-banner">
+            🔒 Locked out after {MAX_ATTEMPTS} wrong attempts. Try again in <b className="mono">{fmtRemaining(lockInfo.remainingMs)}</b>.
+          </div>
+        )}
+
         {error && <div className="login-error">{error}</div>}
 
-        <button className="btn-red auth-submit" type="submit" disabled={loading}>
+        <button className="btn-red auth-submit" type="submit" disabled={loading || lockInfo.locked}>
           {loading
             ? "Please wait…"
+            : lockInfo.locked
+            ? "Locked"
             : view === "signin"
             ? "Sign In"
             : "Sign Up"}

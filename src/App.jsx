@@ -167,9 +167,12 @@ const ICONS = {
   folder:"M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z",
   pdf:"M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 0v5h5",
   chevronLeft:"M15 19l-7-7 7-7",
+  camera:"M4 8a2 2 0 012-2h1.5l1-1.5h7l1 1.5H18a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V8zM12 17a4 4 0 100-8 4 4 0 000 8z",
+  sun:"M12 3v2m0 14v2m9-9h-2M5 12H3m14.95 6.95l-1.414-1.414M6.464 6.464L5.05 5.05m13.9 0l-1.414 1.414M6.464 17.536l-1.414 1.414M12 17a5 5 0 100-10 5 5 0 000 10z",
+  moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
 };
 
-const APP_VERSION = "12.0.0";
+const APP_VERSION = "12.2.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -626,13 +629,13 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                 {isOpen && (
                   <div className="roadmap-expanded-grid">
                     <div className="roadmap-left-col">
-                    <div className="roadmap-days">
+                    <div className="roadmap-days-horizontal">
                       {days.map((d, i) => {
                         const locked = !d.generated;
                         return (
-                          <div key={i} className={"roadmap-day-row" + (d.done ? " done" : "") + (locked ? " locked" : "")}>
+                          <div key={i} className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "")}>
                             {locked ? (
-                              <div className="check-box locked-box">🔒</div>
+                              <div className="rm-card-lock" title="Unlocks after the current page is completed">🔒</div>
                             ) : (
                               <div
                                 className={"check-box" + (d.done ? " checked" : "")}
@@ -641,14 +644,12 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                                 {d.done && <Icon d={ICONS.check} size={12} />}
                               </div>
                             )}
-                            <div className="roadmap-day-body">
-                              <div className="roadmap-day-meta">
-                                <span className="roadmap-day-num">Day {d.day}</span>
-                                <span className="date-badge">📅 {d.date}</span>
-                              </div>
-                              <div className="roadmap-day-task">
-                                {locked ? "Unlocks after the current page is completed" : d.task}
-                              </div>
+                            <div className="roadmap-day-meta">
+                              <span className="roadmap-day-num">Day {d.day}</span>
+                              <span className="date-badge">📅 {d.date}</span>
+                            </div>
+                            <div className="roadmap-day-task">
+                              {locked ? "Locked" : d.task}
                             </div>
                           </div>
                         );
@@ -721,6 +722,70 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
           })}
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── ROADMAP PREVIEW CARD (Dashboard main panel) ────────────
+// Compact card for the Dashboard: shows every active roadmap by
+// name, with its next pending days as small horizontal cards
+// (locked days marked with 🔒), so progress is visible without
+// leaving the main panel. Tapping opens the full Roadmap session.
+const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggleDay }) => {
+  if (roadmapsLoading || !roadmaps || roadmaps.length === 0) return null;
+  return (
+    <div className="card-dark">
+      <div className="panel-label gray">
+        🗺️ Roadmap
+        <span className="panel-hint">pending tasks · tap to open</span>
+      </div>
+      <div className="rm-preview-list">
+        {roadmaps.map(r => {
+          const days = r.days || [];
+          const firstPendingIdx = days.findIndex(d => !d.done);
+          const visible = firstPendingIdx === -1 ? [] : days.slice(firstPendingIdx, firstPendingIdx + 6);
+          return (
+            <div key={r.id} className="rm-preview-group">
+              <div className="rm-preview-name" onClick={onOpenRoadmap}>{r.name || "Roadmap"}</div>
+              {visible.length === 0 ? (
+                <div className="empty-small">All caught up 🎉</div>
+              ) : (
+                <div className="roadmap-days-horizontal">
+                  {visible.map((d, i) => {
+                    const idx = firstPendingIdx + i;
+                    const locked = !d.generated;
+                    return (
+                      <div
+                        key={idx}
+                        className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "")}
+                        onClick={onOpenRoadmap}
+                      >
+                        {locked ? (
+                          <div className="rm-card-lock" title="Unlocks after the current page is completed">🔒</div>
+                        ) : (
+                          <div
+                            className={"check-box" + (d.done ? " checked" : "")}
+                            onClick={e => { e.stopPropagation(); onToggleDay(r.id, idx); }}
+                          >
+                            {d.done && <Icon d={ICONS.check} size={12} />}
+                          </div>
+                        )}
+                        <div className="roadmap-day-meta">
+                          <span className="roadmap-day-num">Day {d.day}</span>
+                          <span className="date-badge">📅 {d.date}</span>
+                        </div>
+                        <div className="roadmap-day-task">
+                          {locked ? "Locked" : d.task}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -953,10 +1018,11 @@ function fmtDateTime(ms) {
   } catch (_) { return "—"; }
 }
 
-const Avatar = ({ user, size }) => {
+const Avatar = ({ user, size, photoDataUrl }) => {
   const s = size || 36;
-  return user.photoURL ? (
-    <img src={user.photoURL} alt="" className="avatar-img"
+  const src = photoDataUrl || user.photoURL;
+  return src ? (
+    <img src={src} alt="" className="avatar-img"
       style={{ width:s, height:s }} referrerPolicy="no-referrer" />
   ) : (
     <div className="avatar-fallback" style={{ width:s, height:s, fontSize:s*0.4 }}>
@@ -965,14 +1031,63 @@ const Avatar = ({ user, size }) => {
   );
 };
 
-const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta }) => {
+// Resize + compress an uploaded image client-side before it's stored as a
+// base64 string in Firestore — keeps the doc small on a low-RAM setup and
+// avoids needing Firebase Storage + its own security rules.
+function resizeImageFile(file, maxSize = 200, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+        const scale = Math.min(1, maxSize / Math.max(width, height));
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photoDataUrl, theme, onToggleTheme }) => {
   const [editing, setEditing]   = useState(false);
   const [name, setName]         = useState(user.displayName || "");
   const [saving, setSaving]     = useState(false);
   const [editingMeta, setEditingMeta] = useState(false);
   const [nickDraft, setNickDraft] = useState(nickname || "");
   const [dobDraft, setDobDraft]   = useState(dob || "");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const inputRef = useRef(null);
+  const photoInputRef = useRef(null);
+
+  const handlePhotoPick = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      onToast && onToast("Please choose an image file");
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const dataUrl = await resizeImageFile(file);
+      onSaveMeta && onSaveMeta({ photoDataUrl: dataUrl });
+      onToast && onToast("Profile picture updated");
+    } catch (e) {
+      onToast && onToast("Couldn't process that image");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   useEffect(() => {
     if (editing) setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
@@ -1018,7 +1133,22 @@ const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta }) => 
         </div>
 
         <div className="profile-hero">
-          <Avatar user={user} size={64} />
+          <label className="avatar-edit-wrap" title="Change profile picture">
+            <Avatar user={user} size={64} photoDataUrl={photoDataUrl} />
+            <span className="avatar-edit-overlay">
+              <Icon d={ICONS.camera} size={20} />
+            </span>
+            <span className="avatar-edit-badge">
+              <Icon d={ICONS.camera} size={11} />
+            </span>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoPick}
+              disabled={uploadingPhoto}
+            />
+          </label>
           <div className="profile-hero-info">
             {editing ? (
               <div className="profile-name-edit">
@@ -1119,6 +1249,25 @@ const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta }) => 
         </div>
 
         <div className="profile-section">
+          <div className="theme-toggle-row">
+            <div className="profile-row" style={{ flex:1 }}>
+              <Icon d={theme === "light" ? ICONS.sun : ICONS.moon} size={16} />
+              <div className="profile-row-text">
+                <span className="profile-row-label">Appearance</span>
+                <span className="profile-row-value">{theme === "light" ? "Light mode" : "Dark mode"}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={"theme-switch" + (theme === "light" ? " is-light" : "")}
+              onClick={onToggleTheme}
+              aria-label="Toggle dark / light mode"
+            >
+              <span className="theme-switch-knob">
+                <Icon d={theme === "light" ? ICONS.sun : ICONS.moon} size={12} />
+              </span>
+            </button>
+          </div>
           <div className="profile-row">
             <Icon d={ICONS.gear} size={16} />
             <div className="profile-row-text">
@@ -1193,7 +1342,7 @@ const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout }) => (
 );
 
 const TopBar = ({ deskScreen, setDeskScreen, upcoming, showNotifPanel, setShowNotifPanel,
-                  user, onProfile }) => {
+                  user, onProfile, photoDataUrl }) => {
   const [title, subtitle] = SCREEN_TITLES[deskScreen] || SCREEN_TITLES.dashboard;
   const overdueCount = upcoming.filter(isOverdue).length;
   return (
@@ -1246,7 +1395,7 @@ const TopBar = ({ deskScreen, setDeskScreen, upcoming, showNotifPanel, setShowNo
         </div>
 
         <button className="profile-btn topbar-profile-btn" title="Profile" onClick={onProfile}>
-          <Avatar user={user} size={34} />
+          <Avatar user={user} size={34} photoDataUrl={photoDataUrl} />
         </button>
       </div>
     </header>
@@ -1494,9 +1643,16 @@ function AppInner({ user }) {
   const [noteSaving, setNoteSaving]   = useState(false);
   const [noteUpdatedAt, setNoteUpdatedAt] = useState(null);
 
-  // ── Profile extras not covered by Firebase Auth (nickname / DOB)
+  // ── Profile extras not covered by Firebase Auth (nickname / DOB / photo)
   const [nickname, setNickname]       = useState("");
   const [dob, setDob]                 = useState("");
+  const [photoDataUrl, setPhotoDataUrl] = useState("");
+
+  // ── Appearance (dark/light) — read a local cache first so there's no
+  // flash of the wrong theme before Firestore's meta doc arrives.
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("wf_theme") || "dark"; } catch (_) { return "dark"; }
+  });
 
   const [openFile, setOpenFile]       = useState(null);
   const [addModalTab, setAddModalTab] = useState("task");
@@ -1590,8 +1746,8 @@ function AppInner({ user }) {
     return () => unsub();
   }, [user]);
 
-  // Profile-meta sync — nickname / date of birth (Firebase Auth has
-  // no fields for these, so they live in their own small doc).
+  // Profile-meta sync — nickname / date of birth / photo / theme (Firebase
+  // Auth has no fields for these, so they live in their own small doc).
   useEffect(() => {
     if (!user) return;
     const metaRef = doc(db, "users", user.uid, "meta", "profile");
@@ -1599,8 +1755,25 @@ function AppInner({ user }) {
       const data = snap.data();
       setNickname(data?.nickname || "");
       setDob(data?.dob || "");
+      setPhotoDataUrl(data?.photoDataUrl || "");
+      if (data?.theme && data.theme !== theme) {
+        setTheme(data.theme);
+        try { localStorage.setItem("wf_theme", data.theme); } catch (_) {}
+      }
     }, () => {});
     return () => unsub();
+  }, [user]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "light" ? "dark" : "light";
+      try { localStorage.setItem("wf_theme", next); } catch (_) {}
+      if (user) {
+        setDoc(doc(db, "users", user.uid, "meta", "profile"),
+          { theme: next, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+      }
+      return next;
+    });
   }, [user]);
 
   // Stop any speech synthesis if the component unmounts mid-read.
@@ -2632,7 +2805,7 @@ function AppInner({ user }) {
   const openAddModal = (tab) => { setAddModalTab(tab || "task"); setShowAdd(true); };
 
   return (
-    <div className="dharani-root">
+    <div className="dharani-root" data-theme={theme}>
       <div className="bg-ambience">
         <div className="bg-gradient" />
         <div className="bg-glow" />
@@ -2648,7 +2821,8 @@ function AppInner({ user }) {
 
       {showProfile && (
         <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast}
-          nickname={nickname} dob={dob} onSaveMeta={saveProfileMeta} />
+          nickname={nickname} dob={dob} onSaveMeta={saveProfileMeta}
+          photoDataUrl={photoDataUrl} theme={theme} onToggleTheme={toggleTheme} />
       )}
 
       {openFile && (
@@ -2680,7 +2854,7 @@ function AppInner({ user }) {
             <div className="clock">{clock}</div>
             <div className="stats-badge">{pct}% done</div>
             <button className="profile-btn" title="Profile" onClick={() => setShowProfile(true)}>
-              <Avatar user={user} size={30} />
+              <Avatar user={user} size={30} photoDataUrl={photoDataUrl} />
             </button>
           </div>
         </header>
@@ -2691,6 +2865,11 @@ function AppInner({ user }) {
             <>
               <FilterTabs tab={tab} setTab={setTab} />
               <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
+              <RoadmapPreviewCard
+                roadmaps={roadmaps} roadmapsLoading={roadmapsLoading}
+                onOpenRoadmap={() => setScreen("roadmap")}
+                onToggleDay={toggleRoadmapDay}
+              />
             </>
           )}
           {screen === "ai" && (
@@ -2736,7 +2915,7 @@ function AppInner({ user }) {
             deskScreen={deskScreen} setDeskScreen={setDeskScreen}
             upcoming={upcoming}
             showNotifPanel={showNotifPanel} setShowNotifPanel={setShowNotifPanel}
-            user={user} onProfile={() => setShowProfile(true)}
+            user={user} onProfile={() => setShowProfile(true)} photoDataUrl={photoDataUrl}
           />
 
           {deskScreen === "dashboard" && (
@@ -2751,6 +2930,11 @@ function AppInner({ user }) {
                 <TaskList filtered={filtered} onToggle={toggleTask} onDelete={deleteTask} />
               </div>
               <div className="dashboard-side">
+                <RoadmapPreviewCard
+                  roadmaps={roadmaps} roadmapsLoading={roadmapsLoading}
+                  onOpenRoadmap={() => setDeskScreen("roadmap")}
+                  onToggleDay={toggleRoadmapDay}
+                />
                 <NotesCard
                   noteText={noteText} noteEditing={noteEditing} setNoteEditing={setNoteEditing}
                   noteDraft={noteDraft} setNoteDraft={setNoteDraft} noteSaving={noteSaving}
