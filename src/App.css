@@ -537,6 +537,42 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 .notif-permission-btn:hover{background:rgba(74,158,255,.15);}
 .empty-small{text-align:center;padding:20px 0;color:#141b3c;font-family:'JetBrains Mono',monospace;font-size:11px;}
 
+/* ── Google Calendar card ── */
+.gcal-card{
+  background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.16);
+  border-radius:10px;padding:12px;margin-bottom:10px;
+}
+.gcal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.gcal-title{font-size:11px;font-weight:700;color:#bbb;}
+.gcal-badge-connected{
+  font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.5px;
+  color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);
+  border-radius:99px;padding:2px 7px;
+}
+.gcal-email{font-family:'JetBrains Mono',monospace;font-size:9px;color:#555;margin-bottom:8px;word-break:break-all;}
+.gcal-desc{font-size:10px;color:#555;line-height:1.5;margin-bottom:10px;}
+.gcal-toggle{
+  display:flex;align-items:center;gap:6px;font-size:10px;color:#888;
+  cursor:pointer;margin-bottom:10px;user-select:none;
+}
+.gcal-toggle input{accent-color:#34d399;width:13px;height:13px;cursor:pointer;}
+.gcal-btn-row{display:flex;gap:8px;}
+.gcal-btn-connect,.gcal-btn-sync{
+  flex:1;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);
+  color:#34d399;border-radius:8px;padding:8px 10px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.4px;
+  cursor:pointer;transition:all .15s;
+}
+.gcal-btn-connect:hover,.gcal-btn-sync:hover{background:rgba(52,211,153,.2);}
+.gcal-btn-connect:disabled,.gcal-btn-sync:disabled{opacity:.6;cursor:default;}
+.gcal-btn-disconnect{
+  background:rgba(var(--wf-ovl),.04);border:1px solid rgba(var(--wf-ovl),.1);
+  color:#666;border-radius:8px;padding:8px 10px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;
+}
+.gcal-btn-disconnect:hover{color:#f87171;border-color:rgba(248,113,113,.3);}
+.gcal-lastsync{margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#444;}
+
 /* ── Stats ── */
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .stat-box{background:rgba(var(--wf-ovl),.02);border-radius:10px;padding:14px;text-align:center;}

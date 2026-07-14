@@ -30,6 +30,81 @@ const SpinnerIcon = () => (
   </svg>
 );
 
+// ─── GOOGLE CALENDAR INTEGRATION ───────────────────────────
+// Client-only OAuth via Google Identity Services (no backend / no client
+// secret needed). Access tokens live only in memory for this tab — never
+// written to Firestore. Only the *connection status* (connected email +
+// auto-sync preference) is persisted, in users/{uid}/meta/googleCalendar.
+const GOOGLE_CLIENT_ID = "355949282033-grpk6dcacusitk75b7iosc09r1agpmlf.apps.googleusercontent.com";
+const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email";
+const GCAL_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+
+let _gisScriptPromise = null;
+function loadGoogleIdentityScript() {
+  if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+    return Promise.resolve();
+  }
+  if (_gisScriptPromise) return _gisScriptPromise;
+  _gisScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById("gis-client-script");
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("Couldn't reach Google — check connection")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "gis-client-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Couldn't reach Google — check connection"));
+    document.head.appendChild(script);
+  });
+  return _gisScriptPromise;
+}
+
+// Builds a Google Calendar event body from a WORK FLOW task. Only tasks
+// with a due date go to Calendar (undated tasks have nothing to schedule).
+// Repeating (daily/weekly) tasks are skipped for now — a single Calendar
+// event can't represent a recurring checklist item cleanly.
+function gcalEventBodyFromTask(task) {
+  if (!task.dueDate || task.repeat !== "none") return null;
+  const prefix = task.done ? "✅ " : task.priority === "high" ? "🔴 " : task.priority === "medium" ? "🟠 " : "🟢 ";
+  const summary = prefix + task.title;
+  const description = "WORK FLOW task • Priority: " + task.priority;
+  if (task.dueTime) {
+    const start = new Date(`${task.dueDate}T${task.dueTime}:00`);
+    if (isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + 30 * 60000);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+    return {
+      summary, description,
+      start: { dateTime: start.toISOString(), timeZone: tz },
+      end:   { dateTime: end.toISOString(), timeZone: tz },
+    };
+  }
+  const nd = new Date(task.dueDate + "T00:00:00");
+  nd.setDate(nd.getDate() + 1);
+  const endDate = nd.getFullYear() + "-" + String(nd.getMonth() + 1).padStart(2, "0") + "-" + String(nd.getDate()).padStart(2, "0");
+  return {
+    summary, description,
+    start: { date: task.dueDate },
+    end:   { date: endDate },
+  };
+}
+
+async function gcalFetch(token, url, options = {}) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+}
+
 // ─── LOCAL FALLBACK (used only for the "notified" set, which is
 // purely a local de-dupe flag and doesn't need to sync) ───────
 const NOTIFIED_KEY = "workflow-notified-v1";
@@ -173,7 +248,7 @@ const ICONS = {
   moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
 };
 
-const APP_VERSION = "12.3.0";
+const APP_VERSION = "12.4.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -515,13 +590,60 @@ const NotifPermissionBanner = ({ onRequest, status }) => {
   );
 };
 
-const RemindersPanel = ({ upcoming, notifStatus, onRequestNotif }) => (
+const GoogleCalendarCard = ({
+  gcalConnected, gcalEmail, gcalAutoSync, gcalSyncing, gcalConnecting, gcalLastSync,
+  onConnectGcal, onDisconnectGcal, onSyncNowGcal, onToggleAutoSync,
+}) => (
+  <div className="gcal-card">
+    <div className="gcal-head">
+      <span className="gcal-title">📅 Google Calendar</span>
+      {gcalConnected && <span className="gcal-badge-connected">Connected</span>}
+    </div>
+    {gcalConnected ? (
+      <>
+        {gcalEmail && <div className="gcal-email">{gcalEmail}</div>}
+        <label className="gcal-toggle">
+          <input type="checkbox" checked={gcalAutoSync} onChange={onToggleAutoSync} />
+          Auto-sync new &amp; updated tasks
+        </label>
+        <div className="gcal-btn-row">
+          <button className="gcal-btn-sync" disabled={gcalSyncing} onClick={onSyncNowGcal}>
+            {gcalSyncing ? "Syncing…" : "Sync now"}
+          </button>
+          <button className="gcal-btn-disconnect" onClick={onDisconnectGcal}>Disconnect</button>
+        </div>
+        {gcalLastSync && <div className="gcal-lastsync">Last synced {timeAgo(gcalLastSync)}</div>}
+      </>
+    ) : (
+      <>
+        <div className="gcal-desc">
+          Push dated tasks — meetings, project deadlines, pending &amp; upcoming work — into Google Calendar.
+        </div>
+        <button className="gcal-btn-connect" disabled={gcalConnecting} onClick={onConnectGcal}>
+          {gcalConnecting ? "Connecting…" : "Connect Google Calendar"}
+        </button>
+      </>
+    )}
+  </div>
+);
+
+const RemindersPanel = ({
+  upcoming, notifStatus, onRequestNotif,
+  gcalConnected, gcalEmail, gcalAutoSync, gcalSyncing, gcalConnecting, gcalLastSync,
+  onConnectGcal, onDisconnectGcal, onSyncNowGcal, onToggleAutoSync,
+}) => (
   <div className="card-dark">
     <div className="panel-label gray">
       ⏰ Reminders
       <span className="panel-hint">auto every min</span>
     </div>
     <NotifPermissionBanner status={notifStatus} onRequest={onRequestNotif} />
+    <GoogleCalendarCard
+      gcalConnected={gcalConnected} gcalEmail={gcalEmail} gcalAutoSync={gcalAutoSync}
+      gcalSyncing={gcalSyncing} gcalConnecting={gcalConnecting} gcalLastSync={gcalLastSync}
+      onConnectGcal={onConnectGcal} onDisconnectGcal={onDisconnectGcal}
+      onSyncNowGcal={onSyncNowGcal} onToggleAutoSync={onToggleAutoSync}
+    />
     {upcoming.length === 0
       ? <div className="empty-small">No timed tasks</div>
       : (
@@ -1601,6 +1723,17 @@ function AppInner({ user }) {
   const [openFile, setOpenFile]       = useState(null);
   const [addModalTab, setAddModalTab] = useState("task");
 
+  // ── Google Calendar sync (connection status only — access tokens
+  // never leave this browser tab, see ensureGcalToken below)
+  const [gcalConnected, setGcalConnected]   = useState(false);
+  const [gcalEmail, setGcalEmail]           = useState("");
+  const [gcalAutoSync, setGcalAutoSync]     = useState(false);
+  const [gcalLastSync, setGcalLastSync]     = useState(null);
+  const [gcalSyncing, setGcalSyncing]       = useState(false);
+  const [gcalConnecting, setGcalConnecting] = useState(false);
+  const gcalTokenRef       = useRef(null); // { accessToken, expiresAt }
+  const gcalTokenClientRef = useRef(null);
+
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
   const desktopInpRef  = useRef(null);
@@ -1704,6 +1837,21 @@ function AppInner({ user }) {
         setTheme(data.theme);
         try { localStorage.setItem("wf_theme", data.theme); } catch (_) {}
       }
+    }, () => {});
+    return () => unsub();
+  }, [user]);
+
+  // Google Calendar connection status — real-time so "Connected" shows
+  // instantly and stays in sync if disconnected from another device.
+  useEffect(() => {
+    if (!user) return;
+    const ref = doc(db, "users", user.uid, "meta", "googleCalendar");
+    const unsub = onSnapshot(ref, (snap) => {
+      const data = snap.data();
+      setGcalConnected(!!data?.connected);
+      setGcalEmail(data?.email || "");
+      setGcalAutoSync(!!data?.autoSync);
+      setGcalLastSync(data?.lastSyncedAt || null);
     }, () => {});
     return () => unsub();
   }, [user]);
@@ -1843,6 +1991,150 @@ function AppInner({ user }) {
     saveTimer.current = setTimeout(() => setSaveFlash(false), 2000);
   }, []);
 
+  // ── Google Calendar: token handling + sync helpers ──────
+  // Returns a usable access token. If `interactive` is false and we already
+  // have one cached in memory that isn't near expiry, reuse it — otherwise
+  // ask Google Identity Services for one (silently if we've already been
+  // granted access this session, or with a consent prompt on first connect).
+  const ensureGcalToken = useCallback((interactive) => {
+    return new Promise((resolve, reject) => {
+      const cached = gcalTokenRef.current;
+      if (!interactive && cached && cached.expiresAt > Date.now() + 60000) {
+        resolve(cached.accessToken);
+        return;
+      }
+      loadGoogleIdentityScript().then(() => {
+        if (!gcalTokenClientRef.current) {
+          gcalTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: GCAL_SCOPE,
+            callback: () => {},
+          });
+        }
+        gcalTokenClientRef.current.callback = (resp) => {
+          if (resp && resp.access_token) {
+            gcalTokenRef.current = {
+              accessToken: resp.access_token,
+              expiresAt: Date.now() + Number(resp.expires_in || 3500) * 1000,
+            };
+            resolve(resp.access_token);
+          } else {
+            reject(new Error(resp?.error || "Google sign-in was cancelled"));
+          }
+        };
+        gcalTokenClientRef.current.requestAccessToken({ prompt: interactive ? "consent" : "" });
+      }).catch(reject);
+    });
+  }, []);
+
+  const connectGoogleCalendar = useCallback(async () => {
+    if (!user) return;
+    setGcalConnecting(true);
+    try {
+      const token = await ensureGcalToken(true);
+      let email = "";
+      try {
+        const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: "Bearer " + token },
+        });
+        if (r.ok) { const j = await r.json(); email = j.email || ""; }
+      } catch (_) {}
+      await setDoc(doc(db, "users", user.uid, "meta", "googleCalendar"),
+        { connected: true, email, autoSync: true, updatedAt: Date.now() }, { merge: true });
+      showToast("📅 Google Calendar connected" + (email ? " — " + email : ""));
+    } catch (e) {
+      showToast("⚠️ Couldn't connect Google Calendar: " + e.message);
+    } finally {
+      setGcalConnecting(false);
+    }
+  }, [user, ensureGcalToken]);
+
+  const disconnectGoogleCalendar = useCallback(async () => {
+    if (!user) return;
+    try {
+      const tok = gcalTokenRef.current?.accessToken;
+      if (tok && window.google?.accounts?.oauth2) window.google.accounts.oauth2.revoke(tok, () => {});
+    } catch (_) {}
+    gcalTokenRef.current = null;
+    try {
+      await setDoc(doc(db, "users", user.uid, "meta", "googleCalendar"),
+        { connected: false, autoSync: false, updatedAt: Date.now() }, { merge: true });
+      showToast("Google Calendar disconnected");
+    } catch (e) {
+      showToast("⚠️ Couldn't disconnect — check connection");
+    }
+  }, [user]);
+
+  const toggleGcalAutoSync = useCallback(async () => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "users", user.uid, "meta", "googleCalendar"),
+        { autoSync: !gcalAutoSync, updatedAt: Date.now() }, { merge: true });
+    } catch (e) {
+      showToast("⚠️ Couldn't update setting");
+    }
+  }, [user, gcalAutoSync]);
+
+  // Push one task to Google Calendar — creates its event on first sync,
+  // then PATCHes the same event on every later sync (id saved on the task).
+  const syncTaskToGcal = useCallback(async (task, opts = {}) => {
+    if (!user) return;
+    const body = gcalEventBodyFromTask(task);
+    if (!body) return;
+    try {
+      const token = await ensureGcalToken(false);
+      let eventId = task.gcalEventId;
+      let res;
+      if (eventId) {
+        res = await gcalFetch(token, `${GCAL_EVENTS_URL}/${eventId}`, { method: "PATCH", body: JSON.stringify(body) });
+        if (res.status === 404 || res.status === 410) eventId = null; // event no longer exists on Google's side
+      }
+      if (!eventId) {
+        res = await gcalFetch(token, GCAL_EVENTS_URL, { method: "POST", body: JSON.stringify(body) });
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (data.id && data.id !== task.gcalEventId) {
+        await setDoc(doc(db, "users", user.uid, "tasks", task.id), { gcalEventId: data.id }, { merge: true });
+      }
+      if (!opts.silent) {
+        await setDoc(doc(db, "users", user.uid, "meta", "googleCalendar"), { lastSyncedAt: Date.now() }, { merge: true });
+      }
+    } catch (e) {
+      if (!opts.silent) showToast("⚠️ Calendar sync failed: " + e.message);
+      throw e;
+    }
+  }, [user, ensureGcalToken]);
+
+  const removeTaskFromGcal = useCallback(async (task) => {
+    if (!user || !task.gcalEventId) return;
+    try {
+      const token = await ensureGcalToken(false);
+      await gcalFetch(token, `${GCAL_EVENTS_URL}/${task.gcalEventId}`, { method: "DELETE" });
+    } catch (_) { /* best-effort — a leftover Calendar event isn't worth surfacing an error for */ }
+  }, [user, ensureGcalToken]);
+
+  // Manual "Sync now" — pushes every dated, one-time task in one go. Handy
+  // for the first sync after connecting (to catch pre-existing tasks) and
+  // any time auto-sync is off.
+  const syncAllTasksToGcal = useCallback(async () => {
+    if (!user) return;
+    setGcalSyncing(true);
+    const datedTasks = tasks.filter(t => t.dueDate && t.repeat === "none");
+    let ok = 0, fail = 0;
+    for (const t of datedTasks) {
+      try { await syncTaskToGcal(t, { silent: true }); ok++; }
+      catch (_) { fail++; }
+    }
+    try {
+      await setDoc(doc(db, "users", user.uid, "meta", "googleCalendar"), { lastSyncedAt: Date.now() }, { merge: true });
+    } catch (_) {}
+    setGcalSyncing(false);
+    showToast(fail === 0
+      ? `📅 Synced ${ok} task${ok === 1 ? "" : "s"} to Google Calendar`
+      : `📅 Synced ${ok}, ${fail} failed — try again`);
+  }, [user, tasks, syncTaskToGcal]);
+
   async function addTask() {
     const title = taskInput.trim();
     if (!title || !user) return;
@@ -1863,6 +2155,9 @@ function AppInner({ user }) {
     try {
       await setDoc(doc(db, "users", user.uid, "tasks", id), task);
       flashSaved();
+      if (gcalConnected && gcalAutoSync) {
+        syncTaskToGcal({ ...task, id }, { silent: true }).catch(() => {});
+      }
     } catch (e) {
       showToast("⚠️ Couldn't save — check connection");
     }
@@ -1911,23 +2206,31 @@ function AppInner({ user }) {
         const next = cur.includes(today) ? cur.filter(d => d !== today) : [...cur, today];
         await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, completedDates: next });
       } else {
-        await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, done: !t.done });
+        const newDone = !t.done;
+        await setDoc(doc(db, "users", user.uid, "tasks", id), { ...t, done: newDone });
+        if (gcalConnected && gcalAutoSync) {
+          syncTaskToGcal({ ...t, done: newDone }, { silent: true }).catch(() => {});
+        }
       }
       flashSaved();
     } catch (e) {
       showToast("⚠️ Couldn't update — check connection");
     }
-  }, [user, tasks, flashSaved]);
+  }, [user, tasks, flashSaved, gcalConnected, gcalAutoSync, syncTaskToGcal]);
 
   const deleteTask = useCallback(async (id) => {
     if (!user) return;
     try {
+      const t = tasks.find(x => x.id === id);
       await deleteDoc(doc(db, "users", user.uid, "tasks", id));
+      if (gcalConnected && gcalAutoSync && t && t.gcalEventId) {
+        removeTaskFromGcal(t).catch(() => {});
+      }
       flashSaved();
     } catch (e) {
       showToast("⚠️ Couldn't delete — check connection");
     }
-  }, [user, flashSaved]);
+  }, [user, tasks, flashSaved, gcalConnected, gcalAutoSync, removeTaskFromGcal]);
 
   const filtered = tasks.filter(t => {
     if (tab === "today")   return isRelevantToday(t);
@@ -2751,6 +3054,13 @@ function AppInner({ user }) {
     onUnlockNextPage: unlockNextRoadmapPage,
   };
 
+  const gcalProps = {
+    upcoming, notifStatus, onRequestNotif: requestNotifPermission,
+    gcalConnected, gcalEmail, gcalAutoSync, gcalSyncing, gcalConnecting, gcalLastSync,
+    onConnectGcal: connectGoogleCalendar, onDisconnectGcal: disconnectGoogleCalendar,
+    onSyncNowGcal: syncAllTasksToGcal, onToggleAutoSync: toggleGcalAutoSync,
+  };
+
   const chatProps = {
     aiMessages, aiLoading, aiInput, setAiInput, onAsk: askAI, chatRef,
     onImportFile: importTasksFromFile, importing, fileInputRef,
@@ -2844,11 +3154,7 @@ function AppInner({ user }) {
             <RoadmapPanel {...roadmapProps} />
           )}
           {screen === "reminders" && (
-            <RemindersPanel
-              upcoming={upcoming}
-              notifStatus={notifStatus}
-              onRequestNotif={requestNotifPermission}
-            />
+            <RemindersPanel {...gcalProps} />
           )}
           {screen === "stats" && (
             <StatsPanel total={total} done={done} pending={pending}
@@ -2933,11 +3239,7 @@ function AppInner({ user }) {
 
           {deskScreen === "calendar" && (
             <div className="single-screen">
-              <RemindersPanel
-                upcoming={upcoming}
-                notifStatus={notifStatus}
-                onRequestNotif={requestNotifPermission}
-              />
+              <RemindersPanel {...gcalProps} />
             </div>
           )}
 
