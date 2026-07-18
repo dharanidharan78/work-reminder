@@ -248,7 +248,7 @@ const ICONS = {
   moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
 };
 
-const APP_VERSION = "12.4.0";
+const APP_VERSION = "12.5.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -445,14 +445,30 @@ const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
 );
 
 // ─── CHAT PANEL ─────────────────────────────────────────────
-// Unified Claude-style chat: ask AI questions, or attach a document
-// (📎) to get a bullet summary posted right into the thread — same
-// place, same input, same history. Replaces the old separate
-// "AI Intel" chat and "Summarize" panel.
+// Unified Claude-style chat: ask AI questions, or tap the (+) button
+// to open a small menu with the two file-driven actions — "Summarize
+// a document" (posts a bullet summary into the thread) and "Auto-add
+// tasks from file" (extracts tasks straight to your list). Same
+// input, same history, one entry point — replaces the old separate
+// paperclip-attach button and the standalone upload icon.
 const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
                      onImportFile, importing, fileInputRef,
                      onAttachFile, attaching, attachProgress, attachFileInputRef,
-                     speakingId, speechPaused, onSpeak, onTogglePause, onStop }) => (
+                     speakingId, speechPaused, onSpeak, onTogglePause, onStop }) => {
+  const [plusOpen, setPlusOpen] = useState(false);
+  const plusWrapRef = useRef(null);
+  const busy = attaching || importing;
+
+  useEffect(() => {
+    if (!plusOpen) return;
+    const onDocClick = (e) => {
+      if (plusWrapRef.current && !plusWrapRef.current.contains(e.target)) setPlusOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [plusOpen]);
+
+  return (
   <div className="card-red">
     <div className="panel-label red">
       <div className="panel-dot" />Chat
@@ -514,6 +530,7 @@ const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
         <div className="ai-bubble">
           <span className="dot1" /><span className="dot2" /><span className="dot3" />
           {attaching && attachProgress && <span className="chat-loading-label">{attachProgress}</span>}
+          {importing && <span className="chat-loading-label">Reading file &amp; adding tasks…</span>}
         </div>
       )}
     </div>
@@ -529,16 +546,56 @@ const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
           e.target.value = "";
         }}
       />
-      <button
-        className="chat-attach-btn"
-        title={attaching ? (attachProgress || "Working…") : "Attach a document to summarize"}
-        aria-label="Attach document"
-        disabled={attaching}
-        onClick={() => attachFileInputRef.current && attachFileInputRef.current.click()}
-      >
-        {attaching ? <SpinnerIcon /> : <Icon d={ICONS.attach} size={17} />}
-      </button>
-      <input className="input-dark" placeholder="Ask AI, or attach a file to summarize…"
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
+        style={{ display: "none" }}
+        onChange={e => {
+          const file = e.target.files && e.target.files[0];
+          if (file) onImportFile(file);
+          e.target.value = "";
+        }}
+      />
+      <div className="chat-plus-wrap" ref={plusWrapRef}>
+        <button
+          className={"chat-plus-btn" + (plusOpen ? " is-open" : "")}
+          title={busy ? (attachProgress || "Working…") : "Add a document"}
+          aria-label="Add"
+          aria-expanded={plusOpen}
+          disabled={busy}
+          onClick={() => setPlusOpen(o => !o)}
+        >
+          {busy ? <SpinnerIcon /> : <Icon d={ICONS.add} size={18} />}
+        </button>
+        {plusOpen && (
+          <div className="chat-plus-menu" role="menu">
+            <button
+              className="chat-plus-menu-item"
+              role="menuitem"
+              onClick={() => { setPlusOpen(false); attachFileInputRef.current && attachFileInputRef.current.click(); }}
+            >
+              <span className="chat-plus-menu-icon"><Icon d={ICONS.summary} size={16} /></span>
+              <span className="chat-plus-menu-text">
+                <span className="chat-plus-menu-title">Summarize a document</span>
+                <span className="chat-plus-menu-sub">Get a bullet summary in this chat</span>
+              </span>
+            </button>
+            <button
+              className="chat-plus-menu-item"
+              role="menuitem"
+              onClick={() => { setPlusOpen(false); fileInputRef.current && fileInputRef.current.click(); }}
+            >
+              <span className="chat-plus-menu-icon"><Icon d={ICONS.tasks} size={16} /></span>
+              <span className="chat-plus-menu-text">
+                <span className="chat-plus-menu-title">Auto-add tasks from file</span>
+                <span className="chat-plus-menu-sub">AI reads a plan and adds tasks for you</span>
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+      <input className="input-dark" placeholder="Ask AI, or tap + to add a file…"
         value={aiInput}
         onChange={e => setAiInput(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") onAsk(); }}
@@ -557,28 +614,9 @@ const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
         </button>
       ))}
     </div>
-    <input
-      type="file"
-      ref={fileInputRef}
-      accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
-      style={{ display: "none" }}
-      onChange={e => {
-        const file = e.target.files && e.target.files[0];
-        if (file) onImportFile(file);
-        e.target.value = "";
-      }}
-    />
-    <button
-      className="icon-upload-btn"
-      title={importing ? "Reading file & adding tasks…" : "Upload plan (txt/pdf/excel/word) → auto-add tasks"}
-      aria-label="Upload plan file"
-      disabled={importing}
-      onClick={() => fileInputRef.current && fileInputRef.current.click()}
-    >
-      {importing ? <SpinnerIcon /> : <UploadIcon />}
-    </button>
   </div>
-);
+  );
+};
 
 // ─── NOTIFICATION PERMISSION BANNER ───────────────────────
 const NotifPermissionBanner = ({ onRequest, status }) => {
@@ -775,13 +813,14 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
           }}
         />
         <button
-          className="icon-upload-btn"
+          className="roadmap-upload-btn"
           title={importing ? (rmProgress || "Building page 1…") : "Upload roadmap file → split into pages of daily tasks"}
           aria-label="Upload roadmap file"
           disabled={importing}
           onClick={() => fileInputRef.current && fileInputRef.current.click()}
         >
           {importing ? <SpinnerIcon /> : <UploadIcon />}
+          <span>{importing ? (rmProgress || "Building page 1…") : "Upload roadmap file"}</span>
         </button>
       </div>
 
@@ -988,81 +1027,42 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
   );
 };
 
+// Center-screen "add a task" panel (Gemini-style rectangular card on
+// desktop; unchanged bottom sheet on mobile — see .add-modal CSS).
+// File-driven flows (summarize / auto-add tasks) live in the Chat
+// panel's (+) menu now, so this modal is purely the manual task form.
 const AddModal = ({ onClose, taskInput, setTaskInput, priority, setPriority,
                     dueDate, setDueDate, dueTime, setDueTime,
                     repeat, setRepeat, repeatDays, setRepeatDays,
-                    onAdd, pct, done, total,
-                    onImportTasks, importingTasks, taskFileInputRef,
-                    initialTab }) => {
+                    onAdd, pct, done, total }) => {
   const ref = useRef(null);
-  const [tab, setTab] = useState(initialTab || "task");
   useEffect(() => {
-    if (tab !== "task") return;
     const t = setTimeout(() => { if (ref.current) ref.current.focus(); }, 80);
     return () => clearTimeout(t);
-  }, [tab]);
+  }, []);
 
   return (
     <div className="add-modal-overlay" onClick={onClose}>
       <div className="add-modal" onClick={e => e.stopPropagation()}>
         <div className="add-modal-header">
           <span className="panel-label red" style={{ marginBottom:0 }}>
-            <div className="panel-dot" />Add
+            <div className="panel-dot" />Add a task
           </span>
           <button className="del-btn" onClick={onClose}>
             <Icon d={ICONS.close} size={18} />
           </button>
         </div>
 
-        <div className="add-modal-tabs">
-          <button className={"add-modal-tab" + (tab === "task" ? " active" : "")}
-            onClick={() => setTab("task")}>
-            <Icon d={ICONS.add} size={14} />Task
-          </button>
-          <button className={"add-modal-tab" + (tab === "import" ? " active" : "")}
-            onClick={() => setTab("import")}>
-            <Icon d={ICONS.ai} size={14} />Auto-add
-          </button>
-        </div>
-
-        {tab === "task" && (
-          <AddForm
-            inputRef={ref}
-            taskInput={taskInput} setTaskInput={setTaskInput}
-            priority={priority}   setPriority={setPriority}
-            dueDate={dueDate}     setDueDate={setDueDate}
-            dueTime={dueTime}     setDueTime={setDueTime}
-            repeat={repeat}       setRepeat={setRepeat}
-            repeatDays={repeatDays} setRepeatDays={setRepeatDays}
-            onAdd={onAdd} pct={pct} done={done} total={total}
-          />
-        )}
-
-        {tab === "import" && (
-          <div className="add-modal-file-tab">
-            <p className="add-modal-file-hint">
-              Upload a plan file — txt, md, csv, json, Excel, PDF, or Word.
-              AI reads it and adds tasks straight to your list, with dates
-              spread out automatically for anything undated.
-            </p>
-            <input
-              type="file"
-              ref={taskFileInputRef}
-              accept=".txt,.md,.csv,.json,.xlsx,.xls,.pdf,.docx"
-              style={{ display: "none" }}
-              onChange={e => {
-                const file = e.target.files && e.target.files[0];
-                if (file) onImportTasks(file);
-                e.target.value = "";
-              }}
-            />
-            <button className="btn-red add-modal-upload-btn" disabled={importingTasks}
-              onClick={() => taskFileInputRef.current && taskFileInputRef.current.click()}>
-              {importingTasks ? <SpinnerIcon /> : <UploadIcon />}
-              {importingTasks ? "Reading file…" : "Choose file"}
-            </button>
-          </div>
-        )}
+        <AddForm
+          inputRef={ref}
+          taskInput={taskInput} setTaskInput={setTaskInput}
+          priority={priority}   setPriority={setPriority}
+          dueDate={dueDate}     setDueDate={setDueDate}
+          dueTime={dueTime}     setDueTime={setDueTime}
+          repeat={repeat}       setRepeat={setRepeat}
+          repeatDays={repeatDays} setRepeatDays={setRepeatDays}
+          onAdd={onAdd} pct={pct} done={done} total={total}
+        />
       </div>
     </div>
   );
@@ -1125,7 +1125,7 @@ function resizeImageFile(file, maxSize = 200, quality = 0.82) {
   });
 }
 
-const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photoDataUrl, theme, onToggleTheme }) => {
+const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photoDataUrl }) => {
   const [editing, setEditing]   = useState(false);
   const [name, setName]         = useState(user.displayName || "");
   const [saving, setSaving]     = useState(false);
@@ -1316,25 +1316,6 @@ const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photo
         </div>
 
         <div className="profile-section">
-          <div className="theme-toggle-row">
-            <div className="profile-row" style={{ flex:1 }}>
-              <Icon d={theme === "light" ? ICONS.sun : ICONS.moon} size={16} />
-              <div className="profile-row-text">
-                <span className="profile-row-label">Appearance</span>
-                <span className="profile-row-value">{theme === "light" ? "Light mode" : "Dark mode"}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              className={"theme-switch" + (theme === "light" ? " is-light" : "")}
-              onClick={onToggleTheme}
-              aria-label="Toggle dark / light mode"
-            >
-              <span className="theme-switch-knob">
-                <Icon d={theme === "light" ? ICONS.sun : ICONS.moon} size={12} />
-              </span>
-            </button>
-          </div>
           <div className="profile-row">
             <Icon d={ICONS.gear} size={16} />
             <div className="profile-row-text">
@@ -1714,14 +1695,10 @@ function AppInner({ user }) {
   const [dob, setDob]                 = useState("");
   const [photoDataUrl, setPhotoDataUrl] = useState("");
 
-  // ── Appearance (dark/light) — read a local cache first so there's no
-  // flash of the wrong theme before Firestore's meta doc arrives.
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem("wf_theme") || "dark"; } catch (_) { return "dark"; }
-  });
+  // ── Appearance — dark mode only (light-mode toggle removed).
+  const theme = "dark";
 
   const [openFile, setOpenFile]       = useState(null);
-  const [addModalTab, setAddModalTab] = useState("task");
 
   // ── Google Calendar sync (connection status only — access tokens
   // never leave this browser tab, see ensureGcalToken below)
@@ -1833,10 +1810,6 @@ function AppInner({ user }) {
       setNickname(data?.nickname || "");
       setDob(data?.dob || "");
       setPhotoDataUrl(data?.photoDataUrl || "");
-      if (data?.theme && data.theme !== theme) {
-        setTheme(data.theme);
-        try { localStorage.setItem("wf_theme", data.theme); } catch (_) {}
-      }
     }, () => {});
     return () => unsub();
   }, [user]);
@@ -1854,18 +1827,6 @@ function AppInner({ user }) {
       setGcalLastSync(data?.lastSyncedAt || null);
     }, () => {});
     return () => unsub();
-  }, [user]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "light" ? "dark" : "light";
-      try { localStorage.setItem("wf_theme", next); } catch (_) {}
-      if (user) {
-        setDoc(doc(db, "users", user.uid, "meta", "profile"),
-          { theme: next, updatedAt: Date.now() }, { merge: true }).catch(() => {});
-      }
-      return next;
-    });
   }, [user]);
 
   // Stop any speech synthesis if the component unmounts mid-read.
@@ -3070,10 +3031,10 @@ function AppInner({ user }) {
     onTogglePause: togglePauseSpeech, onStop: stopSpeech,
   };
 
-  const openAddModal = (tab) => { setAddModalTab(tab || "task"); setShowAdd(true); };
+  const openAddModal = () => { setShowAdd(true); };
 
-  // "Add file" on the My Files card now jumps straight into Chat and pops
-  // the attach picker, instead of opening the old separate Summarize tab.
+  // "Add file" on the My Files card jumps straight into Chat and pops the
+  // (+) menu's attach picker, instead of opening a separate Summarize tab.
   const openChatToAttach = (goDesktop) => {
     if (goDesktop) setDeskScreen("messages"); else setScreen("ai");
     setTimeout(() => {
@@ -3089,15 +3050,13 @@ function AppInner({ user }) {
       </div>
 
       {showAdd && (
-        <AddModal {...formProps} onClose={() => setShowAdd(false)} initialTab={addModalTab}
-          onImportTasks={importTasksFromFile} importingTasks={importing} taskFileInputRef={fileInputRef}
-        />
+        <AddModal {...formProps} onClose={() => setShowAdd(false)} />
       )}
 
       {showProfile && (
         <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast}
           nickname={nickname} dob={dob} onSaveMeta={saveProfileMeta}
-          photoDataUrl={photoDataUrl} theme={theme} onToggleTheme={toggleTheme} />
+          photoDataUrl={photoDataUrl} />
       )}
 
       {openFile && (
@@ -3186,7 +3145,7 @@ function AppInner({ user }) {
               <div className="dashboard-center">
                 <div className="dashboard-center-head">
                   <FilterTabs tab={tab} setTab={setTab} />
-                  <button className="btn-red new-task-btn" onClick={() => openAddModal("task")}>
+                  <button className="btn-red new-task-btn" onClick={() => openAddModal()}>
                     <Icon d={ICONS.add} size={15} />New task
                   </button>
                 </div>
@@ -3216,7 +3175,7 @@ function AppInner({ user }) {
             <div className="tasks-screen">
               <div className="dashboard-center-head">
                 <FilterTabs tab={tab} setTab={setTab} />
-                <button className="btn-red new-task-btn" onClick={() => openAddModal("task")}>
+                <button className="btn-red new-task-btn" onClick={() => openAddModal()}>
                   <Icon d={ICONS.add} size={15} />New task
                 </button>
               </div>
