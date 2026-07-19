@@ -246,6 +246,7 @@ const ICONS = {
   camera:"M4 8a2 2 0 012-2h1.5l1-1.5h7l1 1.5H18a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V8zM12 17a4 4 0 100-8 4 4 0 000 8z",
   sun:"M12 3v2m0 14v2m9-9h-2M5 12H3m14.95 6.95l-1.414-1.414M6.464 6.464L5.05 5.05m13.9 0l-1.414 1.414M6.464 17.536l-1.414 1.414M12 17a5 5 0 100-10 5 5 0 000 10z",
   moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
+  menu:"M4 6h16M4 12h16M4 18h16",
 };
 
 const APP_VERSION = "12.5.0";
@@ -676,6 +677,9 @@ const RemindersPanel = ({
       <span className="panel-hint">auto every min</span>
     </div>
     <NotifPermissionBanner status={notifStatus} onRequest={onRequestNotif} />
+    <div className="notif-limit-note">
+      ℹ️ Reminders fire while WORK FLOW is open (even in the background) — not when it's fully closed. That needs a paid Firebase plan.
+    </div>
     <GoogleCalendarCard
       gcalConnected={gcalConnected} gcalEmail={gcalEmail} gcalAutoSync={gcalAutoSync}
       gcalSyncing={gcalSyncing} gcalConnecting={gcalConnecting} gcalLastSync={gcalLastSync}
@@ -968,7 +972,7 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
 // name, with its next pending days as small horizontal cards
 // (locked days marked with 🔒), so progress is visible without
 // leaving the main panel. Tapping opens the full Roadmap session.
-const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggleDay }) => {
+const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggleDay, mobile }) => {
   if (roadmapsLoading || !roadmaps || roadmaps.length === 0) return null;
   return (
     <div className="card-dark">
@@ -980,6 +984,47 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
         {roadmaps.map(r => {
           const days = r.days || [];
           const firstPendingIdx = days.findIndex(d => !d.done);
+
+          // ── Mobile: one row only, styled like a regular task item ──
+          if (mobile) {
+            const d = firstPendingIdx === -1 ? null : days[firstPendingIdx];
+            const locked = d ? !d.generated : false;
+            return (
+              <div key={r.id} className="rm-preview-group">
+                <div className="rm-preview-name" onClick={onOpenRoadmap}>{r.name || "Roadmap"}</div>
+                {!d ? (
+                  <div className="empty-small">All caught up 🎉</div>
+                ) : (
+                  <div
+                    className={"task-item roadmap-mobile-task" + (d.done ? " done" : "") + (locked ? " locked" : "")}
+                    onClick={onOpenRoadmap}
+                  >
+                    {locked ? (
+                      <div className="rm-card-lock" title="Unlocks after the current page is completed">🔒</div>
+                    ) : (
+                      <div
+                        className={"check-box" + (d.done ? " checked" : "")}
+                        onClick={e => { e.stopPropagation(); onToggleDay(r.id, firstPendingIdx); }}
+                      >
+                        {d.done && <Icon d={ICONS.check} size={12} />}
+                      </div>
+                    )}
+                    <div className="task-body">
+                      <div className="task-title">Day {d.day} · {r.name || "Roadmap"}</div>
+                      <div className="task-meta">
+                        <span className="date-badge">📅 {d.date}</span>
+                      </div>
+                      <div className="roadmap-mobile-task-text">
+                        {locked ? "Locked — unlocks after the current page is completed" : d.task}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // ── Desktop: unchanged horizontal-scroll card list ──
           const visible = firstPendingIdx === -1 ? [] : days.slice(firstPendingIdx, firstPendingIdx + 6);
           return (
             <div key={r.id} className="rm-preview-group">
@@ -1353,7 +1398,7 @@ const SCREEN_TITLES = {
   roadmap:   ["Roadmap",   "Your day-by-day learning plan."],
 };
 
-const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout }) => (
+const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout, onCollapse }) => (
   <aside className="sidebar">
     <div className="sidebar-logo">
       <div className="logo-mark">
@@ -1365,6 +1410,9 @@ const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout }) => (
         <div className="logo-name">WORK FLOW</div>
         <div className="logo-sub">Task Intelligence</div>
       </div>
+      <button className="sidebar-collapse-btn" title="Collapse sidebar" onClick={onCollapse}>
+        <Icon d={ICONS.chevronLeft} size={15} />
+      </button>
     </div>
 
     <nav className="sidebar-nav">
@@ -1387,6 +1435,32 @@ const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout }) => (
       </button>
     </div>
   </aside>
+);
+
+// ── Collapsed-sidebar state: nav icons dock to the bottom of the screen
+// on desktop instead of the left rail, freeing up horizontal space.
+const DesktopDockNav = ({ deskScreen, setDeskScreen, onSettings, onLogout, onExpand }) => (
+  <nav className="desktop-dock-nav">
+    <button className="dock-nav-btn dock-expand-btn" title="Expand sidebar" onClick={onExpand}>
+      <Icon d={ICONS.menu} size={18} />
+    </button>
+    <div className="dock-nav-divider" />
+    {SIDE_NAV_ITEMS.map(n => (
+      <button key={n.id}
+        className={"dock-nav-btn" + (deskScreen === n.id ? " active" : "")}
+        title={n.label}
+        onClick={() => setDeskScreen(n.id)}>
+        <Icon d={ICONS[n.icon]} size={19} />
+      </button>
+    ))}
+    <div className="dock-nav-divider" />
+    <button className="dock-nav-btn" title="Settings" onClick={onSettings}>
+      <Icon d={ICONS.gear} size={19} />
+    </button>
+    <button className="dock-nav-btn dock-logout" title="Log out" onClick={onLogout}>
+      <Icon d={ICONS.logout} size={19} />
+    </button>
+  </nav>
 );
 
 const TopBar = ({ deskScreen, setDeskScreen, upcoming, showNotifPanel, setShowNotifPanel,
@@ -1682,6 +1756,9 @@ function AppInner({ user }) {
   // state above, so the mobile bottom-nav experience is untouched)
   const [deskScreen, setDeskScreen]   = useState("dashboard");
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+  // ── Desktop sidebar collapse: when true, the left sidebar hides and
+  // its nav items reappear as an icon bar docked to the bottom of the screen
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // ── Quick note (top-right "Today note" style card)
   const [noteText, setNoteText]       = useState("");
@@ -1710,6 +1787,7 @@ function AppInner({ user }) {
   const [gcalConnecting, setGcalConnecting] = useState(false);
   const gcalTokenRef       = useRef(null); // { accessToken, expiresAt }
   const gcalTokenClientRef = useRef(null);
+  const swRegRef           = useRef(null); // FCM service worker registration (used for reliable background-tab notifications)
 
   const chatRef        = useRef(null);
   const saveTimer      = useRef(null);
@@ -1849,6 +1927,7 @@ function AppInner({ user }) {
         const registration = await navigator.serviceWorker.register(
           "/firebase-messaging-sw.js"
         );
+        swRegRef.current = registration;
 
         if (Notification.permission === "granted") {
           const token = await getToken(messaging, {
@@ -1888,20 +1967,34 @@ function AppInner({ user }) {
     }
   }, []);
 
-  // Fire a push notification
+  // Fire a push notification.
+  // Free-plan / no-backend setup: this only works while the app (tab or
+  // installed PWA) is still running somewhere — there's no server pushing
+  // to your phone when the app is fully closed or the browser is killed.
+  // We still make it as reliable as possible for "app open but screen
+  // locked / tab in background" by preferring the service worker's
+  // showNotification() — on Android Chrome that lands in the real system
+  // notification tray/lock screen, whereas new Notification() often does
+  // nothing once the tab loses focus.
   const fireNotification = useCallback((title, body) => {
-    if ("Notification" in window && Notification.permission === "granted") {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const opts = {
+      body,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      tag: "workflow-reminder",
+      renotify: true,
+      requireInteraction: false,
+    };
+    const reg = swRegRef.current;
+    if (reg && reg.showNotification) {
+      reg.showNotification(title, opts).catch(() => {
+        try { new Notification(title, opts); } catch (_) {}
+      });
+    } else {
       try {
-        new Notification(title, {
-          body,
-          icon: "/favicon.ico",
-          badge: "/favicon.ico",
-          tag: "workflow-reminder",
-          renotify: true,
-          requireInteraction: false,
-        });
+        new Notification(title, opts);
       } catch (e) {
-        // Notification API not available (e.g. in some mobile browsers)
         console.warn("Notification failed:", e);
       }
     }
@@ -3103,6 +3196,7 @@ function AppInner({ user }) {
                 roadmaps={roadmaps} roadmapsLoading={roadmapsLoading}
                 onOpenRoadmap={() => setScreen("roadmap")}
                 onToggleDay={toggleRoadmapDay}
+                mobile
               />
             </>
           )}
@@ -3125,12 +3219,15 @@ function AppInner({ user }) {
       <BottomNav screen={screen} setScreen={setScreen} onAdd={() => setShowAdd(true)} />
 
       {/* ── DESKTOP app shell: sidebar + topbar + content ── */}
-      <div className="app-shell">
-        <Sidebar
-          deskScreen={deskScreen} setDeskScreen={setDeskScreen}
-          onSettings={() => setShowProfile(true)}
-          onLogout={() => signOut(auth)}
-        />
+      <div className={"app-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+        {!sidebarCollapsed && (
+          <Sidebar
+            deskScreen={deskScreen} setDeskScreen={setDeskScreen}
+            onSettings={() => setShowProfile(true)}
+            onLogout={() => signOut(auth)}
+            onCollapse={() => setSidebarCollapsed(true)}
+          />
+        )}
 
         <div className="main-area">
           <TopBar
@@ -3209,6 +3306,15 @@ function AppInner({ user }) {
           )}
         </div>
       </div>
+
+      {sidebarCollapsed && (
+        <DesktopDockNav
+          deskScreen={deskScreen} setDeskScreen={setDeskScreen}
+          onSettings={() => setShowProfile(true)}
+          onLogout={() => signOut(auth)}
+          onExpand={() => setSidebarCollapsed(false)}
+        />
+      )}
 
       <div className={"toast " + (toast.visible ? "visible" : "hidden")}>
         {toast.msg}

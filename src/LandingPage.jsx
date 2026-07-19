@@ -143,6 +143,17 @@ export default function LandingPage({ onEnter }) {
           </div>
           <div className="lp-mock-float lp-mock-float-1">✓ Task synced</div>
           <div className="lp-mock-float lp-mock-float-2">📄 Summary ready</div>
+
+          {/* Brand swatch cards — floating over the hero visual,
+              same treatment as the reference screenshot */}
+          <div className="lp-swatch-card lp-swatch-blue lp-swatch-1">
+            <div className="lp-swatch-name">Focus work</div>
+            <div className="lp-swatch-hex">froze social media </div>
+          </div>
+          <div className="lp-swatch-card lp-swatch-porcelain lp-swatch-2">
+            <div className="lp-swatch-name"> Find your path </div>
+            <div className="lp-swatch-hex"> Stay Discipline</div>
+          </div>
         </div>
       </header>
 
