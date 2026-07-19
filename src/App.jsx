@@ -249,7 +249,7 @@ const ICONS = {
   menu:"M4 6h16M4 12h16M4 18h16",
 };
 
-const APP_VERSION = "12.5.0";
+const APP_VERSION = "12.6.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -753,12 +753,50 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         rmName, setRmName, rmStartDate, setRmStartDate,
                         rmTotalDays, setRmTotalDays, rmPageSize, setRmPageSize,
                         generatingIds,
-                        onImportFile, onToggleDay, onDelete, onUnlockNextPage }) => {
+                        onImportFile, onToggleDay, onDelete, onUnlockNextPage, onRefreshTopics }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [activeTopic, setActiveTopic] = useState(null);
   const totalDaysNum = parseInt(rmTotalDays, 10) || 0;
   const isOdd = totalDaysNum > 0 && totalDaysNum % 2 !== 0;
   const suggestedPageSize = totalDaysNum > 0 ? Math.ceil(totalDaysNum / 2) : "";
+  // Auto-fetch topics the first time a roadmap is expanded, in case it
+  // predates the Resources feature or a past extraction attempt failed
+  // silently — so Resources heal themselves instead of staying empty forever.
+  const autoFetchedRef = useRef(new Set());
+  useEffect(() => {
+    if (!expandedId) return;
+    const r = roadmaps.find(x => x.id === expandedId);
+    if (!r) return;
+    const hasTopics = r.topics && r.topics.length > 0;
+    if (!hasTopics && !r.topicsLoading && !autoFetchedRef.current.has(expandedId)) {
+      autoFetchedRef.current.add(expandedId);
+      onRefreshTopics && onRefreshTopics(expandedId);
+    }
+  }, [expandedId, roadmaps, onRefreshTopics]);
+
+  // The full session view keeps every day (including past ones) visible
+  // for a history trail, so completed cards shouldn't vanish like on the
+  // preview card — instead they get a quick fade "pulse" down to their
+  // normal done-state opacity, then the strip smooth-scrolls to bring the
+  // next pending day into view (the Netflix "up next" glide).
+  const [justCompletedKey, setJustCompletedKey] = useState(null);
+  const dayCardRefs = useRef({});
+  const justCompletedTimerRef = useRef(null);
+  useEffect(() => () => { if (justCompletedTimerRef.current) clearTimeout(justCompletedTimerRef.current); }, []);
+  const handleToggleWithScroll = (roadmapId, dayIdx, days) => {
+    const key = roadmapId + ":" + dayIdx;
+    setJustCompletedKey(key);
+    onToggleDay(roadmapId, dayIdx);
+    const nextPendingIdx = days.findIndex((dd, ii) => ii > dayIdx && !dd.done && dd.generated);
+    if (nextPendingIdx !== -1) {
+      const nextKey = roadmapId + ":" + nextPendingIdx;
+      setTimeout(() => {
+        const el = dayCardRefs.current[nextKey];
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }, 260);
+    }
+    justCompletedTimerRef.current = setTimeout(() => setJustCompletedKey(null), 620);
+  };
 
   return (
     <div className="card-dark">
@@ -873,14 +911,20 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                     <div className="roadmap-days-horizontal">
                       {days.map((d, i) => {
                         const locked = !d.generated;
+                        const key = r.id + ":" + i;
+                        const justCompleted = justCompletedKey === key;
                         return (
-                          <div key={i} className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "")}>
+                          <div
+                            key={i}
+                            ref={el => { if (el) dayCardRefs.current[key] = el; }}
+                            className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "") + (justCompleted ? " rm-card-just-completed" : "")}
+                          >
                             {locked ? (
                               <div className="rm-card-lock" title="Unlocks after the current page is completed">🔒</div>
                             ) : (
                               <div
                                 className={"check-box" + (d.done ? " checked" : "")}
-                                onClick={() => onToggleDay(r.id, i)}
+                                onClick={() => handleToggleWithScroll(r.id, i, days)}
                               >
                                 {d.done && <Icon d={ICONS.check} size={12} />}
                               </div>
@@ -918,7 +962,15 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         {r.topicsLoading && <span className="panel-hint">finding topics…</span>}
                       </div>
                       {(!r.topics || r.topics.length === 0) && !r.topicsLoading ? (
-                        <div className="empty-small">No topics detected yet</div>
+                        <div className="rm-resources-empty">
+                          <div className="empty-small">No topics detected yet</div>
+                          <button
+                            className="qp-btn rm-retry-topics-btn"
+                            onClick={() => onRefreshTopics && onRefreshTopics(r.id)}
+                          >
+                            🔄 Find topics
+                          </button>
+                        </div>
                       ) : (
                         <>
                           <div className="rm-topic-chips">
@@ -973,6 +1025,24 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
 // (locked days marked with 🔒), so progress is visible without
 // leaving the main panel. Tapping opens the full Roadmap session.
 const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggleDay, mobile }) => {
+  // Netflix-style completion animation: card fades + collapses in place
+  // (CSS handles the "next task glides in" part via flex reflow), and the
+  // actual Firestore write is deferred until the animation finishes so
+  // the card doesn't just vanish mid-transition.
+  const [completingKey, setCompletingKey] = useState(null);
+  const completeTimerRef = useRef(null);
+  useEffect(() => () => { if (completeTimerRef.current) clearTimeout(completeTimerRef.current); }, []);
+  const handleAnimatedToggle = (e, roadmapId, idx) => {
+    e.stopPropagation();
+    const key = roadmapId + ":" + idx;
+    if (completingKey) return; // one completion animation at a time
+    setCompletingKey(key);
+    completeTimerRef.current = setTimeout(() => {
+      onToggleDay(roadmapId, idx);
+      setCompletingKey(null);
+    }, 640);
+  };
+
   if (roadmapsLoading || !roadmaps || roadmaps.length === 0) return null;
   return (
     <div className="card-dark">
@@ -1036,20 +1106,22 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
                   {visible.map((d, i) => {
                     const idx = firstPendingIdx + i;
                     const locked = !d.generated;
+                    const key = r.id + ":" + idx;
+                    const isCompleting = completingKey === key;
                     return (
                       <div
                         key={idx}
-                        className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "")}
+                        className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "") + (isCompleting ? " rm-card-completing" : "")}
                         onClick={onOpenRoadmap}
                       >
                         {locked ? (
                           <div className="rm-card-lock" title="Unlocks after the current page is completed">🔒</div>
                         ) : (
                           <div
-                            className={"check-box" + (d.done ? " checked" : "")}
-                            onClick={e => { e.stopPropagation(); onToggleDay(r.id, idx); }}
+                            className={"check-box" + ((d.done || isCompleting) ? " checked" : "")}
+                            onClick={e => handleAnimatedToggle(e, r.id, idx)}
                           >
-                            {d.done && <Icon d={ICONS.check} size={12} />}
+                            {(d.done || isCompleting) && <Icon d={ICONS.check} size={12} />}
                           </div>
                         )}
                         <div className="roadmap-day-meta">
@@ -1398,7 +1470,7 @@ const SCREEN_TITLES = {
   roadmap:   ["Roadmap",   "Your day-by-day learning plan."],
 };
 
-const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout, onCollapse }) => (
+const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onCollapse }) => (
   <aside className="sidebar">
     <div className="sidebar-logo">
       <div className="logo-mark">
@@ -1407,7 +1479,7 @@ const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout, onCollapse }
         </svg>
       </div>
       <div>
-        <div className="logo-name">WORK FLOW</div>
+        <div className="logo-name"><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
         <div className="logo-sub">Task Intelligence</div>
       </div>
       <button className="sidebar-collapse-btn" title="Collapse sidebar" onClick={onCollapse}>
@@ -1430,16 +1502,13 @@ const Sidebar = ({ deskScreen, setDeskScreen, onSettings, onLogout, onCollapse }
       <button className="sidebar-nav-btn" onClick={onSettings}>
         <Icon d={ICONS.gear} size={18} /><span>Settings</span>
       </button>
-      <button className="sidebar-nav-btn logout" onClick={onLogout}>
-        <Icon d={ICONS.logout} size={18} /><span>Log out</span>
-      </button>
     </div>
   </aside>
 );
 
 // ── Collapsed-sidebar state: nav icons dock to the bottom of the screen
 // on desktop instead of the left rail, freeing up horizontal space.
-const DesktopDockNav = ({ deskScreen, setDeskScreen, onSettings, onLogout, onExpand }) => (
+const DesktopDockNav = ({ deskScreen, setDeskScreen, onSettings, onExpand }) => (
   <nav className="desktop-dock-nav">
     <button className="dock-nav-btn dock-expand-btn" title="Expand sidebar" onClick={onExpand}>
       <Icon d={ICONS.menu} size={18} />
@@ -1456,9 +1525,6 @@ const DesktopDockNav = ({ deskScreen, setDeskScreen, onSettings, onLogout, onExp
     <div className="dock-nav-divider" />
     <button className="dock-nav-btn" title="Settings" onClick={onSettings}>
       <Icon d={ICONS.gear} size={19} />
-    </button>
-    <button className="dock-nav-btn dock-logout" title="Log out" onClick={onLogout}>
-      <Icon d={ICONS.logout} size={19} />
     </button>
   </nav>
 );
@@ -2964,9 +3030,8 @@ function AppInner({ user }) {
       // page 1 or spending any extra tokens beyond this one small call.
       extractRoadmapTopics(GROQ_KEY, trimmed, name).then(async (topics) => {
         try {
-          await setDoc(doc(db, "users", user.uid, "roadmaps", id), {
-            ...roadmapDoc, topics, topicsLoading: false,
-          });
+          await setDoc(doc(db, "users", user.uid, "roadmaps", id),
+            { topics, topicsLoading: false }, { merge: true });
         } catch (e) { /* resources are a bonus — silently skip on failure */ }
       });
     } catch (err) {
@@ -3085,6 +3150,44 @@ function AppInner({ user }) {
     }
   }, [user, flashSaved]);
 
+  // Fixes the "Resources not showing" bug: roadmaps created before the
+  // Resources feature existed (or where the one-shot topic extraction
+  // silently failed — no key, rate limit, offline, etc.) are left with
+  // topics:[] forever, since nothing ever retried it. This lets the
+  // Resources panel fetch/re-fetch topics on demand for ANY roadmap,
+  // old or new, instead of relying only on the fire-and-forget call
+  // made at upload time.
+  const refreshRoadmapTopics = useCallback(async (roadmapId) => {
+    if (!user) return;
+    const r = roadmaps.find(x => x.id === roadmapId);
+    if (!r) return;
+    if (!r.sourceText) {
+      showToast("⚠️ No source text saved for this roadmap — re-upload the file to get resources");
+      return;
+    }
+    const GROQ_KEY = process.env.REACT_APP_GROQ_API_KEY;
+    if (!GROQ_KEY || GROQ_KEY === "your_groq_key_here") {
+      showToast("⚠️ Groq API key not set — can't find topics");
+      return;
+    }
+    try {
+      await setDoc(doc(db, "users", user.uid, "roadmaps", roadmapId),
+        { topicsLoading: true }, { merge: true });
+      const topics = await extractRoadmapTopics(GROQ_KEY, r.sourceText, r.name);
+      await setDoc(doc(db, "users", user.uid, "roadmaps", roadmapId),
+        { topics, topicsLoading: false }, { merge: true });
+      if (!topics || topics.length === 0) {
+        showToast("⚠️ Couldn't detect any topics for this roadmap");
+      }
+    } catch (e) {
+      try {
+        await setDoc(doc(db, "users", user.uid, "roadmaps", roadmapId),
+          { topicsLoading: false }, { merge: true });
+      } catch (_) { /* ignore */ }
+      showToast("⚠️ Couldn't find topics — check connection");
+    }
+  }, [user, roadmaps]);
+
   const formProps = {
     taskInput, setTaskInput,
     priority,  setPriority,
@@ -3106,6 +3209,7 @@ function AppInner({ user }) {
     onToggleDay: toggleRoadmapDay,
     onDelete: deleteRoadmap,
     onUnlockNextPage: unlockNextRoadmapPage,
+    onRefreshTopics: refreshRoadmapTopics,
   };
 
   const gcalProps = {
@@ -3168,7 +3272,7 @@ function AppInner({ user }) {
               </svg>
             </div>
             <div>
-              <div className="logo-name">WORK FLOW</div>
+              <div className="logo-name"><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
               <div className="logo-sub">Task Intelligence</div>
             </div>
           </div>
@@ -3224,7 +3328,6 @@ function AppInner({ user }) {
           <Sidebar
             deskScreen={deskScreen} setDeskScreen={setDeskScreen}
             onSettings={() => setShowProfile(true)}
-            onLogout={() => signOut(auth)}
             onCollapse={() => setSidebarCollapsed(true)}
           />
         )}
@@ -3311,7 +3414,6 @@ function AppInner({ user }) {
         <DesktopDockNav
           deskScreen={deskScreen} setDeskScreen={setDeskScreen}
           onSettings={() => setShowProfile(true)}
-          onLogout={() => signOut(auth)}
           onExpand={() => setSidebarCollapsed(false)}
         />
       )}

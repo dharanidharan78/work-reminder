@@ -56,7 +56,7 @@ export default function LandingPage({ onEnter }) {
         <div className="logo">
           <LogoMark size={32} />
           <div>
-            <div className="logo-name">WORK FLOW</div>
+            <div className="logo-name"><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
             <div className="logo-sub">Task Intelligence</div>
           </div>
         </div>
@@ -147,12 +147,12 @@ export default function LandingPage({ onEnter }) {
           {/* Brand swatch cards — floating over the hero visual,
               same treatment as the reference screenshot */}
           <div className="lp-swatch-card lp-swatch-blue lp-swatch-1">
-            <div className="lp-swatch-name">Focus work</div>
-            <div className="lp-swatch-hex">froze social media </div>
+            <div className="lp-swatch-name">Work Hard</div>
+            <div className="lp-swatch-hex">Stay Focus </div>
           </div>
           <div className="lp-swatch-card lp-swatch-porcelain lp-swatch-2">
-            <div className="lp-swatch-name"> Find your path </div>
-            <div className="lp-swatch-hex"> Stay Discipline</div>
+            <div className="lp-swatch-name">Find your Goal!</div>
+            <div className="lp-swatch-hex"> Work Discipline</div>
           </div>
         </div>
       </header>
@@ -206,7 +206,7 @@ export default function LandingPage({ onEnter }) {
       <footer className="lp-footer">
         <div className="logo">
           <LogoMark size={24} />
-          <div className="logo-name" style={{ fontSize: 13 }}>WORK FLOW</div>
+          <div className="logo-name" style={{ fontSize: 13 }}><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
         </div>
         <div className="lp-footer-text">© {new Date().getFullYear()} WORK FLOW. Built for focused work.</div>
       </footer>

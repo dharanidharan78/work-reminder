@@ -579,7 +579,7 @@ export default function Login({ onBackToLanding }) {
               </svg>
             </div>
             <div>
-              <div className="logo-name">WORK FLOW</div>
+              <div className="logo-name"><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
               <div className="logo-sub">Task Intelligence</div>
             </div>
           </div>
@@ -626,7 +626,7 @@ export default function Login({ onBackToLanding }) {
           </svg>
         </div>
         <div>
-          <div className="logo-name">WORK FLOW</div>
+          <div className="logo-name"><span className="logo-word-work">WORK</span> <span className="logo-word-flow">FLOW</span></div>
           <div className="logo-sub">Task Intelligence</div>
         </div>
       </div>
