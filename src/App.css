@@ -81,7 +81,7 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 .logo-word-flow{color:var(--wf-accent);}
 
 /* ── Roadmap source-file upload button — bigger rectangle,
-   icon + label, Gemini/Claude "attach source" style ── */
+   icon + label, ── */
 .roadmap-upload-btn{
   width:100%;min-height:52px;border-radius:14px;
   display:flex;align-items:center;justify-content:center;gap:10px;
@@ -296,6 +296,17 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 }
 .note-textarea:focus{outline:none;border-color:var(--wf-accent-border);}
 .note-edit-actions{display:flex;gap:8px;}
+
+.files-split{display:flex;flex-wrap:wrap;gap:16px;}
+.files-group{flex:1 1 160px;min-width:140px;display:flex;flex-direction:column;gap:8px;}
+.files-group + .files-group{border-left:1px solid var(--wf-border);padding-left:16px;}
+@media(max-width:1350px){
+  .files-group + .files-group{border-left:none;padding-left:0;
+    border-top:1px solid var(--wf-border);padding-top:12px;}
+}
+.files-group-label{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--wf-text-dim);}
+.files-group-empty{padding:2px 0;}
 
 .files-list{display:flex;flex-direction:column;gap:4px;}
 .file-row{
@@ -1001,11 +1012,7 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
   background:rgba(var(--wf-ovl),.03);border:1px solid rgba(var(--wf-ovl),.07);
   border-radius:10px;padding:10px;
   display:flex;flex-direction:column;gap:6px;
-  transition:border-color .15s,background .15s,
-    opacity .38s ease .12s,transform .38s ease .12s,
-    flex-basis .42s ease .22s,max-width .42s ease .22s,
-    margin .42s ease .22s,padding .42s ease .22s,
-    border-width .42s ease .22s;
+  transition:border-color .15s,background .15s,opacity .2s ease;
   overflow:hidden;
 }
 .roadmap-day-card:hover{border-color:rgba(0,87,255,.3);}
@@ -1017,15 +1024,14 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 .roadmap-day-card.locked .roadmap-day-task{font-style:italic;color:#666;}
 .roadmap-day-card .roadmap-day-meta{display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-bottom:0;}
 .roadmap-day-card .roadmap-day-task{color:#ccc;font-size:11px;line-height:1.4;}
-/* Netflix-style "complete → fade → next slides in": the finished card
-   shrinks to nothing while flex siblings smoothly reflow into the gap,
-   so the next task glides into place instead of jump-cutting. */
+/* Fixed-container fade-only complete: the card's box (width, margin,
+   padding, border) never changes — no reflow, no sibling jump. It just
+   fades opacity to 0 in place over 10s; once gone, JS scrolls the strip
+   to the next pending day. */
 .roadmap-day-card.rm-card-completing{
-  opacity:0!important;transform:scale(.88) translateY(4px);
-  flex-basis:0!important;max-width:0!important;
-  margin-left:0!important;margin-right:0!important;
-  padding-left:0!important;padding-right:0!important;
-  border-width:0!important;pointer-events:none;
+  transition:opacity 3s linear!important;
+  opacity:0!important;
+  pointer-events:none;
 }
 .roadmap-day-card.rm-card-completing .check-box.checked{
   background:var(--wf-lime);border-color:var(--wf-lime);

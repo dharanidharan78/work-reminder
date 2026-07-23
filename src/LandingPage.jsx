@@ -147,12 +147,12 @@ export default function LandingPage({ onEnter }) {
           {/* Brand swatch cards — floating over the hero visual,
               same treatment as the reference screenshot */}
           <div className="lp-swatch-card lp-swatch-blue lp-swatch-1">
-            <div className="lp-swatch-name">Work Hard</div>
-            <div className="lp-swatch-hex">Stay Focus </div>
+            <div className="lp-swatch-name">Signal Blue</div>
+            <div className="lp-swatch-hex">HEX: #0057FF</div>
           </div>
           <div className="lp-swatch-card lp-swatch-porcelain lp-swatch-2">
-            <div className="lp-swatch-name">Find your Goal!</div>
-            <div className="lp-swatch-hex"> Work Discipline</div>
+            <div className="lp-swatch-name">Porcelain</div>
+            <div className="lp-swatch-hex">HEX: #F8F7F4</div>
           </div>
         </div>
       </header>

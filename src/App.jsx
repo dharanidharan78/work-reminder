@@ -1025,22 +1025,39 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
 // (locked days marked with 🔒), so progress is visible without
 // leaving the main panel. Tapping opens the full Roadmap session.
 const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggleDay, mobile }) => {
-  // Netflix-style completion animation: card fades + collapses in place
-  // (CSS handles the "next task glides in" part via flex reflow), and the
-  // actual Firestore write is deferred until the animation finishes so
-  // the card doesn't just vanish mid-transition.
+  // Fixed-container fade-only completion animation: the completing card
+  // keeps its full box (width/margin/padding never change — no reflow,
+  // no sibling jump) and purely fades opacity to 0 over FADE_MS. The
+  // Firestore write is deferred until the fade finishes, and once it
+  // commits we auto-scroll the strip to bring the next pending day into
+  // view (a real scroll to the next task, not a flex-collapse "glide").
+  const FADE_MS = 3000; // 3s fade, per Dharani
   const [completingKey, setCompletingKey] = useState(null);
   const completeTimerRef = useRef(null);
+  const cardRefs = useRef({});
   useEffect(() => () => { if (completeTimerRef.current) clearTimeout(completeTimerRef.current); }, []);
-  const handleAnimatedToggle = (e, roadmapId, idx) => {
+  const handleAnimatedToggle = (e, roadmapId, idx, days) => {
     e.stopPropagation();
     const key = roadmapId + ":" + idx;
     if (completingKey) return; // one completion animation at a time
     setCompletingKey(key);
+
+    // Figure out which day to scroll to *before* the write lands — days
+    // order/index never changes (only .done flips), so the key stays valid.
+    const nextPendingIdx = days.findIndex((dd, ii) => ii > idx && !dd.done && dd.generated);
+    const nextKey = nextPendingIdx !== -1 ? roadmapId + ":" + nextPendingIdx : null;
+
     completeTimerRef.current = setTimeout(() => {
       onToggleDay(roadmapId, idx);
       setCompletingKey(null);
-    }, 640);
+      if (nextKey) {
+        // small delay so the next card has re-rendered before we scroll to it
+        setTimeout(() => {
+          const el = cardRefs.current[nextKey];
+          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+        }, 60);
+      }
+    }, FADE_MS);
   };
 
   if (roadmapsLoading || !roadmaps || roadmaps.length === 0) return null;
@@ -1111,6 +1128,7 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
                     return (
                       <div
                         key={idx}
+                        ref={el => { if (el) cardRefs.current[key] = el; }}
                         className={"roadmap-day-card" + (d.done ? " done" : "") + (locked ? " locked" : "") + (isCompleting ? " rm-card-completing" : "")}
                         onClick={onOpenRoadmap}
                       >
@@ -1119,7 +1137,7 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
                         ) : (
                           <div
                             className={"check-box" + ((d.done || isCompleting) ? " checked" : "")}
-                            onClick={e => handleAnimatedToggle(e, r.id, idx)}
+                            onClick={e => handleAnimatedToggle(e, r.id, idx, days)}
                           >
                             {(d.done || isCompleting) && <Icon d={ICONS.check} size={12} />}
                           </div>
@@ -1652,23 +1670,31 @@ const FILE_ICON_BY_EXT = (name) => {
   return ICONS.folder;
 };
 
-const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenFile }) => (
-  <div className="side-card files-card">
-    <div className="side-card-head">
-      <span>My files</span>
-      <button className="side-card-add-btn" onClick={onAddFile}>
-        <Icon d={ICONS.add} size={13} />Add file
-      </button>
-    </div>
+// Meeting vs project classification for the My Files split view.
+// Prefers the `category` field written by Groq at summarize-time; falls
+// back to a keyword heuristic for older files saved before that field
+// existed, so nothing already in Firestore ends up unclassified.
+const MEETING_HINTS = [
+  "meeting", "agenda", "minutes", "attendee", "action item",
+  "discussed", "standup", "stand-up", "sync", "call notes", "mom",
+];
+const classifyFileCategory = (s) => {
+  if (s.category === "meeting" || s.category === "project") return s.category;
+  const text = (
+    (s.title || "") + " " + (s.sourceFileName || "") + " " + (s.bullets || []).join(" ")
+  ).toLowerCase();
+  return MEETING_HINTS.some(h => text.includes(h)) ? "meeting" : "project";
+};
 
-    {summariesLoading ? (
-      <div className="empty-small">Loading…</div>
-    ) : summaries.length === 0 ? (
-      <div className="empty-small">You have not added any file yet</div>
+const FilesGroup = ({ label, items, onOpen, emptyText }) => (
+  <div className="files-group">
+    <div className="files-group-label">{label}</div>
+    {items.length === 0 ? (
+      <div className="empty-small files-group-empty">{emptyText}</div>
     ) : (
       <div className="files-list">
-        {summaries.slice(0, 5).map(s => (
-          <button key={s.id} className="file-row" onClick={() => onOpenFile(s)}>
+        {items.slice(0, 5).map(s => (
+          <button key={s.id} className="file-row" onClick={() => onOpen(s)}>
             <span className="file-row-icon"><Icon d={FILE_ICON_BY_EXT(s.sourceFileName)} size={15} /></span>
             <span className="file-row-info">
               <span className="file-row-name">{s.title || "Summary"}</span>
@@ -1680,6 +1706,40 @@ const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenFile }) => 
     )}
   </div>
 );
+
+// My Files is split into two inner blocks — Meeting files and Project
+// files. Tapping a meeting file jumps straight into the AI Chat session
+// and drops its (already-generated) summary in as a chat bubble, so it
+// reads like the AI just summarized it live. Project files keep opening
+// the existing detail modal.
+const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenMeetingFile, onOpenProjectFile }) => {
+  const meetingFiles = summaries.filter(s => classifyFileCategory(s) === "meeting");
+  const projectFiles = summaries.filter(s => classifyFileCategory(s) === "project");
+
+  return (
+    <div className="side-card files-card">
+      <div className="side-card-head">
+        <span>My files</span>
+        <button className="side-card-add-btn" onClick={onAddFile}>
+          <Icon d={ICONS.add} size={13} />Add file
+        </button>
+      </div>
+
+      {summariesLoading ? (
+        <div className="empty-small">Loading…</div>
+      ) : summaries.length === 0 ? (
+        <div className="empty-small">You have not added any file yet</div>
+      ) : (
+        <div className="files-split">
+          <FilesGroup label="Meeting files" items={meetingFiles}
+            onOpen={onOpenMeetingFile} emptyText="No meeting files yet" />
+          <FilesGroup label="Project files" items={projectFiles}
+            onOpen={onOpenProjectFile} emptyText="No project files yet" />
+        </div>
+      )}
+    </div>
+  );
+};
 
 const FileDetailModal = ({ file, onClose, onDelete, speakingId, speechPaused,
                            onSpeak, onTogglePause, onStop }) => {
@@ -2665,6 +2725,7 @@ function AppInner({ user }) {
         "Output ONLY a raw JSON object — no markdown, no code fences, no explanation — with exactly these fields:\n" +
         '  "title": a short 3-6 word title guessed from the content\n' +
         '  "bullets": an array of 6 to 12 short bullet strings (max ~20 words each), covering only what is actually in the text — never invent facts not present\n' +
+        '  "category": either "meeting" (meeting notes, minutes, agendas, call/standup notes, attendees & action items) or "project" (roadmaps, specs, tasks, reports, or anything else) — pick exactly one\n' +
         "Stay strictly factual to the source text below.";
 
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -2715,8 +2776,10 @@ function AppInner({ user }) {
       const id = String(Date.now());
       const title = (parsed && parsed.title ? String(parsed.title).trim() : "") ||
         file.name.replace(/\.[^.]+$/, "");
+      const rawCategory = (parsed && parsed.category ? String(parsed.category).toLowerCase() : "");
+      const category = rawCategory.includes("meeting") ? "meeting" : "project";
       const summaryDoc = {
-        title, sourceFileName: file.name, bullets,
+        title, sourceFileName: file.name, bullets, category,
         sourceChars: cleaned.length, truncated: wasTruncated,
         createdAt: Date.now(),
       };
@@ -2724,7 +2787,7 @@ function AppInner({ user }) {
       flashSaved();
       setAiMessages(prev => [...prev, {
         role: "ai", type: "summary",
-        summaryId: id, title, bullets,
+        summaryId: id, title, bullets, category,
         sourceFileName: file.name, truncated: wasTruncated,
       }]);
     } catch (err) {
@@ -2735,6 +2798,29 @@ function AppInner({ user }) {
     setSumProgress("");
     setSumImporting(false);
   }
+
+  // My Files → Meeting files: tapping one jumps into the AI Chat session
+  // and drops its already-generated summary in as an AI bubble (same
+  // shape summarizeFileFromFile posts), so it plays out like the file
+  // was just summarized in that chat. Re-tapping the same file doesn't
+  // duplicate the bubble.
+  const openMeetingFileInChat = useCallback((summary) => {
+    setDeskScreen("messages");
+    setScreen("ai");
+    setAiMessages(prev => {
+      const alreadyThere = prev.some(m => m.type === "summary" && m.summaryId === summary.id);
+      if (alreadyThere) return prev;
+      return [
+        ...prev,
+        { role: "user", type: "file", fileName: summary.sourceFileName },
+        {
+          role: "ai", type: "summary",
+          summaryId: summary.id, title: summary.title, bullets: summary.bullets,
+          sourceFileName: summary.sourceFileName, truncated: summary.truncated,
+        },
+      ];
+    });
+  }, []);
 
   const deleteSummary = useCallback(async (id) => {
     if (!user) return;
@@ -3150,7 +3236,7 @@ function AppInner({ user }) {
     }
   }, [user, flashSaved]);
 
-  // Fixes the "Resources not showing" bug: roadmaps created before the
+ // roadmaps created before the
   // Resources feature existed (or where the one-shot topic extraction
   // silently failed — no key, rate limit, offline, etc.) are left with
   // topics:[] forever, since nothing ever retried it. This lets the
@@ -3365,7 +3451,8 @@ function AppInner({ user }) {
                 <MyFilesCard
                   summaries={summaries} summariesLoading={summariesLoading}
                   onAddFile={() => openChatToAttach(true)}
-                  onOpenFile={setOpenFile}
+                  onOpenMeetingFile={openMeetingFileInChat}
+                  onOpenProjectFile={setOpenFile}
                 />
               </div>
             </div>
