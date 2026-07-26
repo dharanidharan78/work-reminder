@@ -247,9 +247,10 @@ const ICONS = {
   sun:"M12 3v2m0 14v2m9-9h-2M5 12H3m14.95 6.95l-1.414-1.414M6.464 6.464L5.05 5.05m13.9 0l-1.414 1.414M6.464 17.536l-1.414 1.414M12 17a5 5 0 100-10 5 5 0 000 10z",
   moon:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
   menu:"M4 6h16M4 12h16M4 18h16",
+  arrowUp:"M12 19V5m0 0l-7 7m7-7l7 7",
 };
 
-const APP_VERSION = "12.6.0";
+const APP_VERSION = "12.7.0";
 
 // ─── LEARNING RESOURCE PLATFORMS (Roadmap → Resources) ─────
 // Real, always-valid search-results links — never AI-guessed URLs,
@@ -446,19 +447,31 @@ const AddForm = ({ taskInput, setTaskInput, priority, setPriority,
 );
 
 // ─── CHAT PANEL ─────────────────────────────────────────────
-// Unified Claude-style chat: ask AI questions, or tap the (+) button
-// to open a small menu with the two file-driven actions — "Summarize
-// a document" (posts a bullet summary into the thread) and "Auto-add
-// tasks from file" (extracts tasks straight to your list). Same
-// input, same history, one entry point — replaces the old separate
-// paperclip-attach button and the standalone upload icon.
+// Claude.ai-style chat: no boxed container — messages stream into
+// the open background, and a sticky, centered, rounded input pill
+// sits at the bottom with an auto-growing textarea and a circular
+// send button (Enter to send, Shift+Enter for newline). Before the
+// first message there's a centered "What can I help with?" empty
+// state with quick-prompt chips; the (+) button still opens the
+// small menu with the two file-driven actions — "Summarize a
+// document" and "Auto-add tasks from file".
+const QUICK_PROMPTS = [
+  ["Today's focus",  "What should I do first today?"],
+  ["Urgent",         "Which tasks are overdue or urgent?"],
+  ["Motivate me",    "Give me a motivational push to finish my tasks"],
+  ["Break it down",  "Break down my biggest task into steps"],
+];
+
 const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
                      onImportFile, importing, fileInputRef,
                      onAttachFile, attaching, attachProgress, attachFileInputRef,
                      speakingId, speechPaused, onSpeak, onTogglePause, onStop }) => {
   const [plusOpen, setPlusOpen] = useState(false);
   const plusWrapRef = useRef(null);
+  const taRef = useRef(null);
+  const [rippleKey, setRippleKey] = useState(0);
   const busy = attaching || importing;
+  const hasStarted = aiMessages.some(m => m.role === "user" || m.type === "file");
 
   useEffect(() => {
     if (!plusOpen) return;
@@ -469,73 +482,81 @@ const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [plusOpen]);
 
-  return (
-  <div className="card-red">
-    <div className="panel-label red">
-      <div className="panel-dot" />Chat
-    </div>
-    <div className="ai-chat" ref={chatRef}>
-      {aiMessages.map((m, i) => {
-        if (m.type === "file") {
-          return (
-            <div key={i} className="user-bubble chat-file-chip">
-              <Icon d={FILE_ICON_BY_EXT(m.fileName)} size={14} />
-              <span>{m.fileName}</span>
-            </div>
-          );
-        }
-        if (m.type === "summary") {
-          const isSpeakingThis = speakingId === m.summaryId;
-          return (
-            <div key={i} className="ai-bubble chat-summary-bubble">
-              <div className="chat-summary-title">{m.title}</div>
-              <div className="roadmap-item-sub" style={{ margin:"2px 0 8px" }}>
-                {m.sourceFileName} · {m.bullets.length} points
-                {m.truncated ? " · long file, summarized from the first part" : ""}
-              </div>
-              <ul className="sum-bullets">
-                {m.bullets.map((b, bi) => (
-                  <li key={bi} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
-                ))}
-              </ul>
-              <div className="sum-voice-row">
-                {!isSpeakingThis ? (
-                  <button className="qp-btn sum-voice-btn" onClick={() => onSpeak({ id:m.summaryId, title:m.title, bullets:m.bullets })}>
-                    <Icon d={ICONS.speaker} size={14} /> Read aloud
-                  </button>
-                ) : (
-                  <>
-                    <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
-                      <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
-                      {speechPaused ? " Resume" : " Pause"}
-                    </button>
-                    <button className="qp-btn sum-voice-btn" onClick={onStop}>
-                      <Icon d={ICONS.stop} size={14} /> Stop
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="sum-verify-note">
-                ⚠️ AI-generated summary — double-check against the original file for anything critical.
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div key={i} className={m.role === "ai" ? "ai-bubble" : "user-bubble"}>
-            <SafeMessage text={m.text} />
+  const autoGrow = (el) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  };
+
+  const fireSend = (prompt) => {
+    setRippleKey(k => k + 1);
+    onAsk(prompt);
+    requestAnimationFrame(() => autoGrow(taRef.current));
+  };
+
+  const canSend = (aiInput || "").trim().length > 0 && !aiLoading;
+
+  const renderMessage = (m, i) => {
+    if (m.type === "file") {
+      return (
+        <div key={i} className="cw-row cw-row-user">
+          <div className="user-bubble chat-file-chip">
+            <Icon d={FILE_ICON_BY_EXT(m.fileName)} size={14} />
+            <span>{m.fileName}</span>
           </div>
-        );
-      })}
-      {(aiLoading || importing || attaching) && (
-        <div className="ai-bubble">
-          <span className="dot1" /><span className="dot2" /><span className="dot3" />
-          {attaching && attachProgress && <span className="chat-loading-label">{attachProgress}</span>}
-          {importing && <span className="chat-loading-label">Reading file &amp; adding tasks…</span>}
         </div>
-      )}
-    </div>
-    <div className="ai-input-row">
+      );
+    }
+    if (m.type === "summary") {
+      const isSpeakingThis = speakingId === m.summaryId;
+      return (
+        <div key={i} className="cw-row cw-row-ai">
+          <div className="ai-bubble chat-summary-bubble">
+            <div className="chat-summary-title">{m.title}</div>
+            <div className="roadmap-item-sub" style={{ margin:"2px 0 8px" }}>
+              {m.sourceFileName} · {m.bullets.length} points
+              {m.truncated ? " · long file, summarized from the first part" : ""}
+            </div>
+            <ul className="sum-bullets">
+              {m.bullets.map((b, bi) => (
+                <li key={bi} className={"sum-bullet" + (isSpeakingThis ? " speaking" : "")}>{b}</li>
+              ))}
+            </ul>
+            <div className="sum-voice-row">
+              {!isSpeakingThis ? (
+                <button className="qp-btn sum-voice-btn" onClick={() => onSpeak({ id:m.summaryId, title:m.title, bullets:m.bullets })}>
+                  <Icon d={ICONS.speaker} size={14} /> Read aloud
+                </button>
+              ) : (
+                <>
+                  <button className="qp-btn sum-voice-btn" onClick={onTogglePause}>
+                    <Icon d={speechPaused ? ICONS.play : ICONS.pause} size={14} />
+                    {speechPaused ? " Resume" : " Pause"}
+                  </button>
+                  <button className="qp-btn sum-voice-btn" onClick={onStop}>
+                    <Icon d={ICONS.stop} size={14} /> Stop
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="sum-verify-note">
+              ⚠️ AI-generated summary — double-check against the original file for anything critical.
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={i} className={"cw-row " + (m.role === "ai" ? "cw-row-ai" : "cw-row-user")}>
+        <div className={m.role === "ai" ? "ai-bubble cw-plain" : "user-bubble"}>
+          <SafeMessage text={m.text} />
+        </div>
+      </div>
+    );
+  };
+
+  const dock = (
+    <div className="cw-dock">
       <input
         type="file"
         ref={attachFileInputRef}
@@ -558,64 +579,118 @@ const ChatPanel = ({ aiMessages, aiLoading, aiInput, setAiInput, onAsk, chatRef,
           e.target.value = "";
         }}
       />
-      <div className="chat-plus-wrap" ref={plusWrapRef}>
+      <div className="cw-inputbar">
+        <div className="chat-plus-wrap" ref={plusWrapRef}>
+          <button
+            className={"chat-plus-btn" + (plusOpen ? " is-open" : "")}
+            title={busy ? (attachProgress || "Working…") : "Add a document"}
+            aria-label="Add"
+            aria-expanded={plusOpen}
+            disabled={busy}
+            onClick={() => setPlusOpen(o => !o)}
+          >
+            {busy ? <SpinnerIcon /> : <Icon d={ICONS.add} size={18} />}
+          </button>
+          {plusOpen && (
+            <div className="chat-plus-menu" role="menu">
+              <button
+                className="chat-plus-menu-item"
+                role="menuitem"
+                onClick={() => { setPlusOpen(false); attachFileInputRef.current && attachFileInputRef.current.click(); }}
+              >
+                <span className="chat-plus-menu-icon"><Icon d={ICONS.summary} size={16} /></span>
+                <span className="chat-plus-menu-text">
+                  <span className="chat-plus-menu-title">Summarize a document</span>
+                  <span className="chat-plus-menu-sub">Get a bullet summary in this chat</span>
+                </span>
+              </button>
+              <button
+                className="chat-plus-menu-item"
+                role="menuitem"
+                onClick={() => { setPlusOpen(false); fileInputRef.current && fileInputRef.current.click(); }}
+              >
+                <span className="chat-plus-menu-icon"><Icon d={ICONS.tasks} size={16} /></span>
+                <span className="chat-plus-menu-text">
+                  <span className="chat-plus-menu-title">Auto-add tasks from file</span>
+                  <span className="chat-plus-menu-sub">AI reads a plan and adds tasks for you</span>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <textarea
+          ref={taRef}
+          className="cw-textarea"
+          placeholder="Ask anything, or tap + to add a file…"
+          rows={1}
+          value={aiInput}
+          onChange={e => { setAiInput(e.target.value); autoGrow(e.target); }}
+          onKeyDown={e => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (canSend) fireSend();
+            }
+          }}
+        />
+
         <button
-          className={"chat-plus-btn" + (plusOpen ? " is-open" : "")}
-          title={busy ? (attachProgress || "Working…") : "Add a document"}
-          aria-label="Add"
-          aria-expanded={plusOpen}
-          disabled={busy}
-          onClick={() => setPlusOpen(o => !o)}
+          className="cw-send"
+          disabled={!canSend}
+          onClick={() => { if (canSend) fireSend(); }}
+          aria-label="Send"
         >
-          {busy ? <SpinnerIcon /> : <Icon d={ICONS.add} size={18} />}
+          <span key={rippleKey} className="cw-send-ripple" />
+          {aiLoading ? (
+            <span className="cw-send-wave">
+              <span /><span /><span /><span />
+            </span>
+          ) : (
+            <Icon d={ICONS.arrowUp} size={17} />
+          )}
         </button>
-        {plusOpen && (
-          <div className="chat-plus-menu" role="menu">
-            <button
-              className="chat-plus-menu-item"
-              role="menuitem"
-              onClick={() => { setPlusOpen(false); attachFileInputRef.current && attachFileInputRef.current.click(); }}
-            >
-              <span className="chat-plus-menu-icon"><Icon d={ICONS.summary} size={16} /></span>
-              <span className="chat-plus-menu-text">
-                <span className="chat-plus-menu-title">Summarize a document</span>
-                <span className="chat-plus-menu-sub">Get a bullet summary in this chat</span>
-              </span>
-            </button>
-            <button
-              className="chat-plus-menu-item"
-              role="menuitem"
-              onClick={() => { setPlusOpen(false); fileInputRef.current && fileInputRef.current.click(); }}
-            >
-              <span className="chat-plus-menu-icon"><Icon d={ICONS.tasks} size={16} /></span>
-              <span className="chat-plus-menu-text">
-                <span className="chat-plus-menu-title">Auto-add tasks from file</span>
-                <span className="chat-plus-menu-sub">AI reads a plan and adds tasks for you</span>
-              </span>
-            </button>
-          </div>
-        )}
       </div>
-      <input className="input-dark" placeholder="Ask AI, or tap + to add a file…"
-        value={aiInput}
-        onChange={e => setAiInput(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") onAsk(); }}
-      />
-      <button className="btn-ai" onClick={() => onAsk()}>ASK</button>
+
+      {!hasStarted && (
+        <div className="cw-quick-prompts">
+          {QUICK_PROMPTS.map(([label, prompt]) => (
+            <button key={label} className="qp-btn" onClick={() => fireSend(prompt)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
-    <div className="quick-prompts">
-      {[
-        ["Today's focus",  "What should I do first today?"],
-        ["Urgent",         "Which tasks are overdue or urgent?"],
-        ["Motivate me",    "Give me a motivational push to finish my tasks"],
-        ["Break it down",  "Break down my biggest task into steps"],
-      ].map(([label, prompt]) => (
-        <button key={label} className="qp-btn" onClick={() => onAsk(prompt)}>
-          {label}
-        </button>
-      ))}
+  );
+
+  return (
+    <div className="cw-shell">
+      {!hasStarted ? (
+        <div className="cw-empty">
+          <div className="cw-empty-mark">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <path d="M4 12l4 6 4-11 4 11 4-6" stroke="#0057ff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="cw-empty-title">What can I help with?</div>
+          <div className="cw-empty-sub">Ask about your tasks, priorities, or attach a document.</div>
+        </div>
+      ) : (
+        <div className="cw-scroll" ref={chatRef}>
+          {aiMessages.map(renderMessage)}
+          {(aiLoading || importing || attaching) && (
+            <div className="cw-row cw-row-ai">
+              <div className="ai-bubble cw-plain">
+                <span className="dot1" /><span className="dot2" /><span className="dot3" />
+                {attaching && attachProgress && <span className="chat-loading-label">{attachProgress}</span>}
+                {importing && <span className="chat-loading-label">Reading file &amp; adding tasks…</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {dock}
     </div>
-  </div>
   );
 };
 
@@ -745,6 +820,23 @@ const StatsPanel = ({ total, done, pending, highCount, pct }) => (
   </div>
 );
 
+// Scrolls a roadmap day-card into view by moving only its own
+// ".roadmap-days-horizontal" strip's scrollLeft — never el.scrollIntoView(),
+// which (even with block:"nearest") can walk up to the page's own scroll
+// container and nudge vertical scroll, visibly shifting unrelated sibling
+// cards (Tasks, Notes, Files) on the dashboard. This keeps the completion
+// animation strictly local to the strip.
+function scrollDayCardIntoView(el) {
+  if (!el) return;
+  const container = el.closest(".roadmap-days-horizontal");
+  if (!container) return;
+  const target = el.offsetLeft - (container.clientWidth - el.clientWidth) / 2;
+  const max = container.scrollWidth - container.clientWidth;
+  const left = Math.max(0, Math.min(target, max));
+  if (container.scrollTo) container.scrollTo({ left, behavior: "smooth" });
+  else container.scrollLeft = left;
+}
+
 // ─── ROADMAP PANEL ─────────────────────────────────────────
 // Separate "session" from Tasks: upload any roadmap file (e.g. a
 // 100-day full stack roadmap) and it gets split into one small,
@@ -755,24 +847,28 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         generatingIds,
                         onImportFile, onToggleDay, onDelete, onUnlockNextPage, onRefreshTopics }) => {
   const [expandedId, setExpandedId] = useState(null);
-  const [activeTopic, setActiveTopic] = useState(null);
+  // Resources now lives in its own top-level block (see below), covering
+  // every uploaded roadmap at once, so the active topic is tracked per
+  // roadmap id instead of a single shared value.
+  const [activeTopics, setActiveTopics] = useState({});
   const totalDaysNum = parseInt(rmTotalDays, 10) || 0;
   const isOdd = totalDaysNum > 0 && totalDaysNum % 2 !== 0;
   const suggestedPageSize = totalDaysNum > 0 ? Math.ceil(totalDaysNum / 2) : "";
-  // Auto-fetch topics the first time a roadmap is expanded, in case it
-  // predates the Resources feature or a past extraction attempt failed
-  // silently — so Resources heal themselves instead of staying empty forever.
+  // Auto-fetch topics for every roadmap once, in case it predates the
+  // Resources feature or a past extraction attempt failed silently — so
+  // Resources heal themselves instead of staying empty forever. Runs for
+  // all roadmaps now that Resources is always visible at the top of the
+  // panel, not just whichever one happens to be expanded.
   const autoFetchedRef = useRef(new Set());
   useEffect(() => {
-    if (!expandedId) return;
-    const r = roadmaps.find(x => x.id === expandedId);
-    if (!r) return;
-    const hasTopics = r.topics && r.topics.length > 0;
-    if (!hasTopics && !r.topicsLoading && !autoFetchedRef.current.has(expandedId)) {
-      autoFetchedRef.current.add(expandedId);
-      onRefreshTopics && onRefreshTopics(expandedId);
-    }
-  }, [expandedId, roadmaps, onRefreshTopics]);
+    roadmaps.forEach(r => {
+      const hasTopics = r.topics && r.topics.length > 0;
+      if (!hasTopics && !r.topicsLoading && !autoFetchedRef.current.has(r.id)) {
+        autoFetchedRef.current.add(r.id);
+        onRefreshTopics && onRefreshTopics(r.id);
+      }
+    });
+  }, [roadmaps, onRefreshTopics]);
 
   // The full session view keeps every day (including past ones) visible
   // for a history trail, so completed cards shouldn't vanish like on the
@@ -791,8 +887,7 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
     if (nextPendingIdx !== -1) {
       const nextKey = roadmapId + ":" + nextPendingIdx;
       setTimeout(() => {
-        const el = dayCardRefs.current[nextKey];
-        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+        scrollDayCardIntoView(dayCardRefs.current[nextKey]);
       }, 260);
     }
     justCompletedTimerRef.current = setTimeout(() => setJustCompletedKey(null), 620);
@@ -884,7 +979,7 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
             const hasMorePages = currentPage < totalPages;
             return (
               <div key={r.id} className="roadmap-item">
-                <div className="roadmap-item-head" onClick={() => { setExpandedId(isOpen ? null : r.id); setActiveTopic(null); }}>
+                <div className="roadmap-item-head" onClick={() => setExpandedId(isOpen ? null : r.id)}>
                   <div className="roadmap-item-title">{r.name || "Roadmap"}</div>
                   <button
                     className="del-btn"
@@ -907,7 +1002,6 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                 )}
                 {isOpen && (
                   <div className="roadmap-expanded-grid">
-                    <div className="roadmap-left-col">
                     <div className="roadmap-days-horizontal">
                       {days.map((d, i) => {
                         const locked = !d.generated;
@@ -948,67 +1042,76 @@ const RoadmapPanel = ({ roadmaps, roadmapsLoading, importing, rmProgress, fileIn
                         🔓 Unlock page {currentPage + 1} of {totalPages} now
                       </button>
                     )}
-                    </div>
-
-                    {/* Learning resources — free videos / free & paid courses,
-                        picked from the AI-extracted topics for this roadmap.
-                        Links are built locally (not by the AI), so they always
-                        open real, working search results — never a broken URL.
-                        Shown parallel to the (possibly locked) next session. */}
-                    <div className="roadmap-right-col">
-                    <div className="rm-resources">
-                      <div className="rm-resources-head">
-                        📚 Resources
-                        {r.topicsLoading && <span className="panel-hint">finding topics…</span>}
-                      </div>
-                      {(!r.topics || r.topics.length === 0) && !r.topicsLoading ? (
-                        <div className="rm-resources-empty">
-                          <div className="empty-small">No topics detected yet</div>
-                          <button
-                            className="qp-btn rm-retry-topics-btn"
-                            onClick={() => onRefreshTopics && onRefreshTopics(r.id)}
-                          >
-                            🔄 Find topics
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="rm-topic-chips">
-                            {(r.topics || []).map(topic => (
-                              <button
-                                key={topic}
-                                className={"rm-topic-chip" + (activeTopic === topic ? " active" : "")}
-                                onClick={() => setActiveTopic(activeTopic === topic ? null : topic)}
-                              >
-                                {topic}
-                              </button>
-                            ))}
-                          </div>
-                          {activeTopic && (
-                            <div className="rm-resource-cards">
-                              {buildResourceLinks(activeTopic).map(res => (
-                                <a
-                                  key={res.key}
-                                  className="rm-resource-card"
-                                  href={res.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <span className="rm-resource-emoji">{res.emoji}</span>
-                                  <span className="rm-resource-info">
-                                    <span className="rm-resource-platform">{res.label}</span>
-                                    <span className="rm-resource-title">{activeTopic}</span>
-                                  </span>
-                                  <span className={"rm-price-badge " + res.priceClass}>{res.price}</span>
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    </div>
                   </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Resources — its own top-level block on the main Roadmap panel,
+          not nested inside any single roadmap's expanded view. Shows as
+          soon as at least one roadmap has been uploaded, one group per
+          roadmap, each with its own topic chips (free videos / free &
+          paid courses, picked from the AI-extracted topics). Links are
+          built locally (not by the AI), so they always open real,
+          working search results — never a broken URL. */}
+      {!roadmapsLoading && roadmaps.length > 0 && (
+        <div className="rm-resources rm-resources-main">
+          <div className="rm-resources-head">📚 Resources</div>
+          {roadmaps.map(r => {
+            const active = activeTopics[r.id] || null;
+            return (
+              <div key={r.id} className="rm-resources-roadmap-group">
+                <div className="rm-resources-roadmap-name">
+                  {r.name || "Roadmap"}
+                  {r.topicsLoading && <span className="panel-hint">finding topics…</span>}
+                </div>
+                {(!r.topics || r.topics.length === 0) && !r.topicsLoading ? (
+                  <div className="rm-resources-empty">
+                    <div className="empty-small">No topics detected yet</div>
+                    <button
+                      className="qp-btn rm-retry-topics-btn"
+                      onClick={() => onRefreshTopics && onRefreshTopics(r.id)}
+                    >
+                      🔄 Find topics
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rm-topic-chips">
+                      {(r.topics || []).map(topic => (
+                        <button
+                          key={topic}
+                          className={"rm-topic-chip" + (active === topic ? " active" : "")}
+                          onClick={() => setActiveTopics(prev => ({ ...prev, [r.id]: prev[r.id] === topic ? null : topic }))}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                    {active && (
+                      <div className="rm-resource-cards">
+                        {buildResourceLinks(active).map(res => (
+                          <a
+                            key={res.key}
+                            className="rm-resource-card"
+                            href={res.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <span className="rm-resource-emoji">{res.emoji}</span>
+                            <span className="rm-resource-info">
+                              <span className="rm-resource-platform">{res.label}</span>
+                              <span className="rm-resource-title">{active}</span>
+                            </span>
+                            <span className={"rm-price-badge " + res.priceClass}>{res.price}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );
@@ -1031,7 +1134,7 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
   // Firestore write is deferred until the fade finishes, and once it
   // commits we auto-scroll the strip to bring the next pending day into
   // view (a real scroll to the next task, not a flex-collapse "glide").
-  const FADE_MS = 3000; // 3s fade, per Dharani
+  const FADE_MS = 900; // 0.9s fade, per Dharani
   const [completingKey, setCompletingKey] = useState(null);
   const completeTimerRef = useRef(null);
   const cardRefs = useRef({});
@@ -1052,10 +1155,7 @@ const RoadmapPreviewCard = ({ roadmaps, roadmapsLoading, onOpenRoadmap, onToggle
       setCompletingKey(null);
       if (nextKey) {
         // small delay so the next card has re-rendered before we scroll to it
-        setTimeout(() => {
-          const el = cardRefs.current[nextKey];
-          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-        }, 60);
+        setTimeout(() => scrollDayCardIntoView(cardRefs.current[nextKey]), 60);
       }
     }, FADE_MS);
   };
@@ -1670,31 +1770,23 @@ const FILE_ICON_BY_EXT = (name) => {
   return ICONS.folder;
 };
 
-// Meeting vs project classification for the My Files split view.
-// Prefers the `category` field written by Groq at summarize-time; falls
-// back to a keyword heuristic for older files saved before that field
-// existed, so nothing already in Firestore ends up unclassified.
-const MEETING_HINTS = [
-  "meeting", "agenda", "minutes", "attendee", "action item",
-  "discussed", "standup", "stand-up", "sync", "call notes", "mom",
-];
-const classifyFileCategory = (s) => {
-  if (s.category === "meeting" || s.category === "project") return s.category;
-  const text = (
-    (s.title || "") + " " + (s.sourceFileName || "") + " " + (s.bullets || []).join(" ")
-  ).toLowerCase();
-  return MEETING_HINTS.some(h => text.includes(h)) ? "meeting" : "project";
-};
+const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenFile }) => (
+  <div className="side-card files-card">
+    <div className="side-card-head">
+      <span>My files</span>
+      <button className="side-card-add-btn" onClick={onAddFile}>
+        <Icon d={ICONS.add} size={13} />Add file
+      </button>
+    </div>
 
-const FilesGroup = ({ label, items, onOpen, emptyText }) => (
-  <div className="files-group">
-    <div className="files-group-label">{label}</div>
-    {items.length === 0 ? (
-      <div className="empty-small files-group-empty">{emptyText}</div>
+    {summariesLoading ? (
+      <div className="empty-small">Loading…</div>
+    ) : summaries.length === 0 ? (
+      <div className="empty-small">You have not added any file yet</div>
     ) : (
       <div className="files-list">
-        {items.slice(0, 5).map(s => (
-          <button key={s.id} className="file-row" onClick={() => onOpen(s)}>
+        {summaries.slice(0, 5).map(s => (
+          <button key={s.id} className="file-row" onClick={() => onOpenFile(s)}>
             <span className="file-row-icon"><Icon d={FILE_ICON_BY_EXT(s.sourceFileName)} size={15} /></span>
             <span className="file-row-info">
               <span className="file-row-name">{s.title || "Summary"}</span>
@@ -1706,40 +1798,6 @@ const FilesGroup = ({ label, items, onOpen, emptyText }) => (
     )}
   </div>
 );
-
-// My Files is split into two inner blocks — Meeting files and Project
-// files. Tapping a meeting file jumps straight into the AI Chat session
-// and drops its (already-generated) summary in as a chat bubble, so it
-// reads like the AI just summarized it live. Project files keep opening
-// the existing detail modal.
-const MyFilesCard = ({ summaries, summariesLoading, onAddFile, onOpenMeetingFile, onOpenProjectFile }) => {
-  const meetingFiles = summaries.filter(s => classifyFileCategory(s) === "meeting");
-  const projectFiles = summaries.filter(s => classifyFileCategory(s) === "project");
-
-  return (
-    <div className="side-card files-card">
-      <div className="side-card-head">
-        <span>My files</span>
-        <button className="side-card-add-btn" onClick={onAddFile}>
-          <Icon d={ICONS.add} size={13} />Add file
-        </button>
-      </div>
-
-      {summariesLoading ? (
-        <div className="empty-small">Loading…</div>
-      ) : summaries.length === 0 ? (
-        <div className="empty-small">You have not added any file yet</div>
-      ) : (
-        <div className="files-split">
-          <FilesGroup label="Meeting files" items={meetingFiles}
-            onOpen={onOpenMeetingFile} emptyText="No meeting files yet" />
-          <FilesGroup label="Project files" items={projectFiles}
-            onOpen={onOpenProjectFile} emptyText="No project files yet" />
-        </div>
-      )}
-    </div>
-  );
-};
 
 const FileDetailModal = ({ file, onClose, onDelete, speakingId, speechPaused,
                            onSpeak, onTogglePause, onStop }) => {
@@ -2725,7 +2783,6 @@ function AppInner({ user }) {
         "Output ONLY a raw JSON object — no markdown, no code fences, no explanation — with exactly these fields:\n" +
         '  "title": a short 3-6 word title guessed from the content\n' +
         '  "bullets": an array of 6 to 12 short bullet strings (max ~20 words each), covering only what is actually in the text — never invent facts not present\n' +
-        '  "category": either "meeting" (meeting notes, minutes, agendas, call/standup notes, attendees & action items) or "project" (roadmaps, specs, tasks, reports, or anything else) — pick exactly one\n' +
         "Stay strictly factual to the source text below.";
 
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -2776,10 +2833,8 @@ function AppInner({ user }) {
       const id = String(Date.now());
       const title = (parsed && parsed.title ? String(parsed.title).trim() : "") ||
         file.name.replace(/\.[^.]+$/, "");
-      const rawCategory = (parsed && parsed.category ? String(parsed.category).toLowerCase() : "");
-      const category = rawCategory.includes("meeting") ? "meeting" : "project";
       const summaryDoc = {
-        title, sourceFileName: file.name, bullets, category,
+        title, sourceFileName: file.name, bullets,
         sourceChars: cleaned.length, truncated: wasTruncated,
         createdAt: Date.now(),
       };
@@ -2787,7 +2842,7 @@ function AppInner({ user }) {
       flashSaved();
       setAiMessages(prev => [...prev, {
         role: "ai", type: "summary",
-        summaryId: id, title, bullets, category,
+        summaryId: id, title, bullets,
         sourceFileName: file.name, truncated: wasTruncated,
       }]);
     } catch (err) {
@@ -2798,29 +2853,6 @@ function AppInner({ user }) {
     setSumProgress("");
     setSumImporting(false);
   }
-
-  // My Files → Meeting files: tapping one jumps into the AI Chat session
-  // and drops its already-generated summary in as an AI bubble (same
-  // shape summarizeFileFromFile posts), so it plays out like the file
-  // was just summarized in that chat. Re-tapping the same file doesn't
-  // duplicate the bubble.
-  const openMeetingFileInChat = useCallback((summary) => {
-    setDeskScreen("messages");
-    setScreen("ai");
-    setAiMessages(prev => {
-      const alreadyThere = prev.some(m => m.type === "summary" && m.summaryId === summary.id);
-      if (alreadyThere) return prev;
-      return [
-        ...prev,
-        { role: "user", type: "file", fileName: summary.sourceFileName },
-        {
-          role: "ai", type: "summary",
-          summaryId: summary.id, title: summary.title, bullets: summary.bullets,
-          sourceFileName: summary.sourceFileName, truncated: summary.truncated,
-        },
-      ];
-    });
-  }, []);
 
   const deleteSummary = useCallback(async (id) => {
     if (!user) return;
@@ -3236,7 +3268,7 @@ function AppInner({ user }) {
     }
   }, [user, flashSaved]);
 
- // roadmaps created before the
+  // Fixes the "Resources not showing" bug: roadmaps created before the
   // Resources feature existed (or where the one-shot topic extraction
   // silently failed — no key, rate limit, offline, etc.) are left with
   // topics:[] forever, since nothing ever retried it. This lets the
@@ -3451,8 +3483,7 @@ function AppInner({ user }) {
                 <MyFilesCard
                   summaries={summaries} summariesLoading={summariesLoading}
                   onAddFile={() => openChatToAttach(true)}
-                  onOpenMeetingFile={openMeetingFileInChat}
-                  onOpenProjectFile={setOpenFile}
+                  onOpenFile={setOpenFile}
                 />
               </div>
             </div>
@@ -3471,7 +3502,7 @@ function AppInner({ user }) {
           )}
 
           {deskScreen === "messages" && (
-            <div className="single-screen">
+            <div className="single-screen cw-desktop-wrap">
               <ChatPanel {...chatProps} />
             </div>
           )}
