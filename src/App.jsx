@@ -13,8 +13,17 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
+import emailjs from "@emailjs/browser";
 import Login from "./Login";
 import LandingPage from "./LandingPage";
+import { buildMotivationEmail } from "./emailMotivation";
+
+// ─── EMAIL REMINDERS (EmailJS — client-only, no backend) ──
+// Same "no server, keys live in .env" pattern already used for Groq and
+// Google Calendar. Free tier: 200 emails/month, plenty for due-task pings.
+const EMAILJS_SERVICE_ID  = process.env.REACT_APP_EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.REACT_APP_EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY  = process.env.REACT_APP_EMAILJS_PUBLIC_KEY;
 
 // ─── ICONS (upload / spinner) ──────────────────────────────
 const UploadIcon = () => (
@@ -1360,7 +1369,16 @@ function resizeImageFile(file, maxSize = 200, quality = 0.82) {
   });
 }
 
-const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photoDataUrl }) => {
+const USER_TYPE_OPTIONS = [
+  { id: "student",      label: "🎓 Student" },
+  { id: "professional", label: "💼 Professional" },
+  { id: "normal",       label: "🙂 Normal" },
+];
+
+const ProfileModal = ({
+  user, onClose, onToast, nickname, dob, onSaveMeta, photoDataUrl,
+  userType, emailRemindersEnabled,
+}) => {
   const [editing, setEditing]   = useState(false);
   const [name, setName]         = useState(user.displayName || "");
   const [saving, setSaving]     = useState(false);
@@ -1547,6 +1565,37 @@ const ProfileModal = ({ user, onClose, onToast, nickname, dob, onSaveMeta, photo
                 <span className="profile-row-value">{dob || "Not set"}</span>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-section-head">
+            <span>Reminder style</span>
+          </div>
+          <div className="profile-row-label" style={{ marginBottom: 2 }}>How should WORK FLOW talk to you?</div>
+          <div className="usertype-seg">
+            {USER_TYPE_OPTIONS.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                className={"usertype-seg-btn" + ((userType || "normal") === o.id ? " active" : "")}
+                onClick={() => onSaveMeta && onSaveMeta({ userType: o.id })}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="gcal-toggle" style={{ marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={!!emailRemindersEnabled}
+              onChange={(e) => onSaveMeta && onSaveMeta({ emailRemindersEnabled: e.target.checked })}
+            />
+            Email me task reminders{user.email ? " (to " + user.email + ")" : ""}
+          </label>
+          <div className="notif-limit-note" style={{ marginTop: 2 }}>
+            ℹ️ Sent the moment a task is due, in a tone matched to the style above — Duolingo-ish for students, straight-to-the-point for professionals.
           </div>
         </div>
 
@@ -1956,6 +2005,10 @@ function AppInner({ user }) {
   const [dob, setDob]                 = useState("");
   const [photoDataUrl, setPhotoDataUrl] = useState("");
 
+  // ── Reminder-email personalization: how WORK FLOW should talk to you
+  const [userType, setUserType] = useState("normal"); // "student" | "professional" | "normal"
+  const [emailRemindersEnabled, setEmailRemindersEnabled] = useState(false);
+
   // ── Appearance — dark mode only (light-mode toggle removed).
   const theme = "dark";
 
@@ -2072,6 +2125,8 @@ function AppInner({ user }) {
       setNickname(data?.nickname || "");
       setDob(data?.dob || "");
       setPhotoDataUrl(data?.photoDataUrl || "");
+      setUserType(data?.userType || "normal");
+      setEmailRemindersEnabled(!!data?.emailRemindersEnabled);
     }, () => {});
     return () => unsub();
   }, [user]);
@@ -2184,6 +2239,31 @@ function AppInner({ user }) {
     }
   }, []);
 
+  // Fire a motivational reminder email (Duolingo-style, tone matched to
+  // the user's chosen profile type). Client-only via EmailJS — same
+  // no-backend pattern as everything else in this app.
+  const sendReminderEmail = useCallback((task) => {
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
+      console.warn("Email reminders skipped — EmailJS keys not set in .env yet.");
+      return;
+    }
+    if (!user?.email) return;
+    const { subject, message } = buildMotivationEmail(
+      userType, nickname || user.displayName, task
+    );
+    emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: user.email,
+      to_name: nickname || user.displayName || "there",
+      subject,
+      message,
+      task_title: task.title,
+      due_date: task.dueDate || "",
+      due_time: task.dueTime || "",
+    }, { publicKey: EMAILJS_PUBLIC_KEY }).catch((e) => {
+      console.warn("Reminder email failed:", e?.text || e?.message || e);
+    });
+  }, [user, userType, nickname]);
+
   // Reminder checker — runs every minute
   useEffect(() => {
     const check = () => {
@@ -2205,6 +2285,8 @@ function AppInner({ user }) {
           showToast(msg);
           // Push notification to mobile/desktop
           fireNotification("⏰ WORK FLOW Reminder", t.title + (t.dueDate ? " — " + t.dueDate : ""));
+          // Motivational email, only if the person opted in from Profile
+          if (emailRemindersEnabled) sendReminderEmail(t);
           const n = new Set([...notified, t.id]);
           setNotified(n);
           saveLS(NOTIFIED_KEY, [...n]);
@@ -2214,7 +2296,7 @@ function AppInner({ user }) {
     check(); // run immediately on mount/update
     const id = setInterval(check, 60000);
     return () => clearInterval(id);
-  }, [tasks, notified, fireNotification]);
+  }, [tasks, notified, fireNotification, emailRemindersEnabled, sendReminderEmail]);
 
   // Chat scroll
   useEffect(() => {
@@ -3371,7 +3453,8 @@ function AppInner({ user }) {
       {showProfile && (
         <ProfileModal user={user} onClose={() => setShowProfile(false)} onToast={showToast}
           nickname={nickname} dob={dob} onSaveMeta={saveProfileMeta}
-          photoDataUrl={photoDataUrl} />
+          photoDataUrl={photoDataUrl} userType={userType}
+          emailRemindersEnabled={emailRemindersEnabled} />
       )}
 
       {openFile && (

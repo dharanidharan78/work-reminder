@@ -1225,6 +1225,16 @@ body{background:var(--wf-bg-deep);-webkit-tap-highlight-color:transparent;}
 .profile-row-label{font-size:9px;color:var(--wf-text-dim);letter-spacing:1px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;}
 .profile-row-value{font-size:13px;color:var(--wf-text);word-break:break-word;}
 
+.usertype-seg{display:flex;gap:6px;flex-wrap:wrap;}
+.usertype-seg-btn{
+  background:rgba(var(--wf-ovl),.04);border:1px solid rgba(var(--wf-ovl),.1);
+  color:var(--wf-text-dim);border-radius:20px;padding:6px 12px;font-size:12px;
+  font-weight:700;cursor:pointer;transition:background .15s,border-color .15s,color .15s;
+  white-space:nowrap;font-family:'Manrope',sans-serif;
+}
+.usertype-seg-btn:hover{border-color:rgba(0,87,255,.35);color:var(--wf-text);}
+.usertype-seg-btn.active{background:#0057ff;border-color:#0057ff;color:#fff;}
+
 .profile-signout-btn{
   width:100%;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:8px;
   background:rgba(0,87,255,.08);border:1px solid rgba(0,87,255,.25);color:#0057ff;
